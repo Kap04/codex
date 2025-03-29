@@ -1,0 +1,8 @@
+flask
+flask-cors
+crawl4ai
+supabase
+mistralai
+python-dotenv
+numpy
+uuid
