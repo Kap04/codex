@@ -1,137 +1,66 @@
-// app/page.tsx
-'use client'
+"use client"
 
-import { useState } from 'react';
-import axios from 'axios';
-import Markdown from 'react-markdown'
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { CheckCircle, Globe } from "lucide-react";
+import Link from "next/link";
 
-export default function Home() {
-  const [url, setUrl] = useState('');
-  const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isCrawling, setIsCrawling] = useState(false);
-  const [isAnswering, setIsAnswering] = useState(false);
-  const [error, setError] = useState('');
-  const [crawlStatus, setCrawlStatus] = useState('');
-
-  const handleUrlSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setIsCrawling(true);
-    setCrawlStatus('Starting crawl process...');
-    
-    try {
-      const response = await axios.post('/api/crawl', { url });
-      setCrawlStatus('Documentation successfully processed!');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to process documentation');
-      setCrawlStatus('');
-    } finally {
-      setIsCrawling(false);
-    }
-  };
-
-  const handleQuestionSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setIsAnswering(true);
-    
-    try {
-      const response = await axios.post('/api/ask', { question });
-      setAnswer(response.data.answer);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to get answer');
-    } finally {
-      setIsAnswering(false);
-    }
-  };
+export default function CodexLanding() {
+  const [url, setUrl] = useState("");
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <main className="max-w-3xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8 text-center">Codex</h1>
-        <p className="mb-6 text-zinc-300">
-          Enter a documentation URL to process, then ask questions about it.
-        </p>
-        
-        <div className="bg-gray-900 p-6 rounded-lg shadow-md mb-8">
-          <h2 className="text-xl font-semibold mb-4">Process Documentation</h2>
-          <form onSubmit={handleUrlSubmit}>
-            <div className="mb-4">
-              <label htmlFor="url" className="block text-sm font-medium text-zinc-300 mb-1">
-                Documentation URL
-              </label>
-              <input
-                type="url"
-                id="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com/docs"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                required
-              />
+    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-6">
+      <motion.h1
+        className="text-5xl font-bold text-center mb-6"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        Welcome to <span className="text-blue-400">Codex</span>
+      </motion.h1>
+      <p className="text-lg text-gray-300 text-center max-w-2xl mb-8">
+        Codex enables users to create a personalized AI-powered documentation system simply by providing a URL as input.
+      </p>
+      
+      <Link href="/c" className="bg-blue-500 hover:bg-blue-600 text-white px-5 py-3 rounded-lg">
+        Generate Docs
+      </Link>
+
+      <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl">
+        {features.map((feature, index) => (
+          <motion.div
+            key={index}
+            className="bg-gray-800 p-6 rounded-xl shadow-md flex items-start gap-4"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: index * 0.2 }}
+          >
+            <feature.icon className="text-blue-400 w-8 h-8" />
+            <div>
+              <h3 className="text-xl font-semibold">{feature.title}</h3>
+              <p className="text-gray-400 mt-2">{feature.description}</p>
             </div>
-            <button
-              type="submit"
-              disabled={isCrawling}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-blue-400"
-            >
-              {isCrawling ? 'Processing...' : 'Process Documentation'}
-            </button>
-          </form>
-          
-          {crawlStatus && (
-            <div className="mt-4 p-3 bg-blue-50 text-blue-800 rounded">
-              {crawlStatus}
-            </div>
-          )}
-        </div>
-        
-        {crawlStatus.includes('successfully') && (
-          <div className="bg-gray-900 p-6 rounded-lg shadow-md">
-            <h2 className="text-xl font-semibold mb-4">Ask Questions</h2>
-            <form onSubmit={handleQuestionSubmit}>
-              <div className="mb-4">
-                <label htmlFor="question" className="block text-sm font-medium text-zinc-300 mb-1">
-                  Your Question
-                </label>
-                <textarea
-                  id="question"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="What does this documentation say about...?"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  rows={3}
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={isAnswering}
-                className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-green-400"
-              >
-                {isAnswering ? 'Getting Answer...' : 'Get Answer'}
-              </button>
-            </form>
-            
-            {answer && (
-              <div className="mt-6">
-                <h3 className="font-medium text-lg mb-2">Answer:</h3>
-                <div className="bg-gray-900 p-4 rounded-md whitespace-pre-wrap">
-                  <Markdown>{answer}</Markdown>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        
-        {error && (
-          <div className="mt-6 p-4 bg-red-50 text-red-700 rounded-md">
-            <strong>Error:</strong> {error}
-          </div>
-        )}
-      </main>
+          </motion.div>
+        ))}
+      </div>
     </div>
   );
 }
+
+const features = [
+  {
+    title: "AI-Powered Documentation",
+    description: "Automatically generate structured and insightful documentation from any URL.",
+    icon: CheckCircle,
+  },
+  {
+    title: "Real-Time Updates",
+    description: "Keep your documentation fresh with automatic updates whenever content changes.",
+    icon: Globe,
+  },
+  {
+    title: "Easy Integration",
+    description: "Seamlessly integrate with your existing workflow for a smooth experience.",
+    icon: CheckCircle,
+  },
+];
