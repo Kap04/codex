@@ -9,7 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@firebase/auth": "^1.10.0",
     "@radix-ui/react-slot": "^1.1.2",
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.4",
     "axios": "^1.8.4",
     "axios-retry": "^4.5.0",
     "class-variance-authority": "^0.7.1",

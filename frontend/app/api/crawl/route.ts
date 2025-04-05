@@ -8,15 +8,6 @@ import axiosRetry from 'axios-retry';
 
 
 
-
-// Explicitly define the RetryConfig type with non-optional retryCondition
-// type RetryConfig = {
-//   retries: number;
-//   retryDelay: (retryCount: number) => number;
-//   retryCondition: (error: AxiosError<unknown, any>) => boolean;
-// };
-
-
 // Configure axios-retry for automatic retries
 axiosRetry(axios, {
   retries: 3,

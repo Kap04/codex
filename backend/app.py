@@ -13,6 +13,9 @@ from urllib.parse import urlparse
 import numpy as np
 from typing import List, Dict, Any
 import asyncio
+import jwt
+from datetime import datetime, timedelta
+from functools import wraps
 
 from mistral_common.tokens.tokenizers.mistral import MistralTokenizer
 from mistral_common.protocol.instruct.request import ChatCompletionRequest
@@ -22,14 +25,14 @@ import  traceback
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from mistral_common.tokens.tokenizers.tekken import SpecialTokenPolicy
 
+
+
 # Instantiate the tokenizer (using v3 as per docs)
 tokenizer = MistralTokenizer.from_model("mistral-embed"  , strict=True)
 
 # Update the special token policy to IGNORE special tokens during decoding
 tokenizer.instruct_tokenizer.tokenizer.special_token_policy = SpecialTokenPolicy.IGNORE
 
-
-# tokenizer = MistralTokenizer.v3(is_tekken=True)
 
 
 
@@ -41,7 +44,7 @@ CORS(app)
 
 # Supabase setup
 supabase_url = os.environ.get("SUPABASE_URL")
-supabase_key = os.environ.get("SUPABASE_KEY")
+supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
 supabase = create_client(supabase_url, supabase_key)
 
 # Mistral AI setup
@@ -50,7 +53,165 @@ mistral_client = Mistral(api_key=mistral_api_key)
 print(mistral_api_key)
 MISTRAL_MODEL = "codestral-2501"  # Choose appropriate model version
 
+# JWT Configuration
+JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")  # Make sure to set this in .env
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_DELTA = timedelta(days=1)
+
+def setup_database():
+    """Create necessary tables if they don't exist"""
+    try:
+        print("Setting up database tables...")
+        
+        # Check if users table exists
+        try:
+            # Try to query the users table
+            supabase.table("users").select("id").limit(1).execute()
+            print("Users table already exists")
+        except Exception as e:
+            print(f"Users table doesn't exist or is not accessible: {str(e)}")
+            print("Please run the SQL script in the Supabase SQL editor to create the table")
+            print("You can find the script at: backend/create_users_table.sql")
+            
+        print("Database setup completed")
+    except Exception as e:
+        print(f"Error setting up database: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+
+# Run database setup on startup
+setup_database()
+
+def create_token(user_id: str) -> str:
+    payload = {
+        'user_id': user_id,
+        'exp': datetime.utcnow() + JWT_EXPIRATION_DELTA
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            token = request.headers['Authorization'].split(" ")[1]
+        
+        if not token:
+            return jsonify({'message': 'Token is missing'}), 401
+        
+        try:
+            data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            current_user = supabase.table("users").select("*").eq("id", data['user_id']).execute()
+            if not current_user.data:
+                return jsonify({'message': 'Invalid token'}), 401
+        except:
+            return jsonify({'message': 'Invalid token'}), 401
+        
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/auth/register', methods=['POST'])
+def register():
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        
+        print(f"Registration attempt for email: {email}")
+        
+        if not email or not password:
+            print("Registration failed: Missing email or password")
+            return jsonify({"error": "Email and password are required"}), 400
+            
+        # Check if user already exists
+        print("Checking if user already exists...")
+        existing_user = supabase.table("users").select("*").eq("email", email).execute()
+        print(f"Existing user check result: {existing_user}")
+        
+        if existing_user.data:
+            print(f"Registration failed: User already exists with email {email}")
+            return jsonify({"error": "User already exists"}), 400
+            
+        # Create new user
+        user_id = str(uuid.uuid4())
+        print(f"Creating new user with ID: {user_id}")
+        
+        try:
+            new_user = supabase.table("users").insert({
+                "id": user_id,
+                "email": email,
+                "password": password  # In production, hash the password!
+            }).execute()
+            print(f"User creation result: {new_user}")
+        except Exception as db_error:
+            print(f"Database error during user creation: {str(db_error)}")
+            print(f"Error type: {type(db_error)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            return jsonify({"error": f"Database error: {str(db_error)}"}), 500
+        
+        # Generate token
+        token = create_token(user_id)
+        print(f"Token generated successfully for user: {user_id}")
+        
+        return jsonify({
+            "message": "User created successfully",
+            "token": token
+        })
+        
+    except Exception as e:
+        print(f"Unexpected error during registration: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/auth/login', methods=['POST'])
+def login():
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        
+        print(f"Login attempt for email: {email}")
+        
+        if not email or not password:
+            print("Login failed: Missing email or password")
+            return jsonify({"error": "Email and password are required"}), 400
+            
+        # Find user
+        print("Attempting to find user in database...")
+        try:
+            user = supabase.table("users").select("*").eq("email", email).eq("password", password).execute()
+            print(f"User query result: {user}")
+        except Exception as db_error:
+            print(f"Database error during login: {str(db_error)}")
+            print(f"Error type: {type(db_error)}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
+            return jsonify({"error": f"Database error: {str(db_error)}"}), 500
+        
+        if not user.data:
+            print(f"Login failed: Invalid credentials for email {email}")
+            return jsonify({"error": "Invalid credentials"}), 401
+            
+        # Generate token
+        user_id = user.data[0]['id']
+        token = create_token(user_id)
+        print(f"Login successful for user: {user_id}")
+        
+        return jsonify({
+            "message": "Login successful",
+            "token": token
+        })
+        
+    except Exception as e:
+        print(f"Unexpected error during login: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/crawl', methods=['POST'])
+@token_required
 def crawl():
     try:
         # Get URL from request
@@ -92,7 +253,7 @@ def crawl():
                 print(f"Crawler Error: {str(crawler_error)}")
                 raise
         
-        # Run the async crawler and process the list of results
+        # Run the async crawler and cess the list of results
         try:
             results = asyncio.run(run_crawler())
             
@@ -162,6 +323,7 @@ def crawl():
 
 
 @app.route('/ask', methods=['POST'])
+@token_required
 def ask():
     try:
         data = request.json

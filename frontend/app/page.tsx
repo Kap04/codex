@@ -5,11 +5,18 @@ import { motion } from "framer-motion";
 import { CheckCircle, Globe } from "lucide-react";
 import Link from "next/link";
 
+
+
+
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
+
 export default function CodexLanding() {
-  const [url, setUrl] = useState("");
+  
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-6">
+
       <motion.h1
         className="text-5xl font-bold text-center mb-6"
         initial={{ opacity: 0, y: -20 }}
@@ -22,9 +29,16 @@ export default function CodexLanding() {
         Codex enables users to create a personalized AI-powered documentation system simply by providing a URL as input.
       </p>
       
-      <Link href="/c" className="bg-blue-500 hover:bg-blue-600 text-white px-5 py-3 rounded-lg">
-        Generate Docs
+
+      <Link href="/register" className="bg-blue-500 hover:bg-blue-600 text-white px-5 py-3 rounded-lg">
+        sign up
       </Link>
+
+      <Link href="/login" className="bg-blue-500 hover:bg-blue-600 text-white px-5 py-3 rounded-lg">
+        login
+      </Link>
+        
+      
 
       <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl">
         {features.map((feature, index) => (
