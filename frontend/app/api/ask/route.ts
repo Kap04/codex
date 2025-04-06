@@ -13,7 +13,12 @@ export async function POST(request: NextRequest) {
     
     // Forward the request to your Python backend
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
-    const response = await axios.post(`${backendUrl}/ask`, { question });
+    const response = await axios.post(`${backendUrl}/ask`, { question }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${request.headers.get('authorization')?.split(' ')[1]}`
+      }
+    });
     
     return NextResponse.json(response.data);
   } catch (error: any) {

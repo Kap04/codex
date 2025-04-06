@@ -1,7 +1,7 @@
 flask==2.0.1
 flask-cors==3.0.10
 crawl4ai==0.1.0
-supabase==0.0.2
+supabase==1.0.3
 mistralai==0.0.7
 python-dotenv==0.19.0
 numpy==1.21.2

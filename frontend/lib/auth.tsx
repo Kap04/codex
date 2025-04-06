@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Set token in cookie
       document.cookie = `token=${data.token}; path=/; max-age=${60 * 60 * 24 * 7}`; // 7 days
       
-      router.push('/c'); // Redirect to /c page after login
+      router.push('/chat/new'); // Redirect to new chat after login
     } catch (error) {
       console.error('Login error:', error);
       setError(error instanceof Error ? error.message : 'An unknown error occurred');
@@ -115,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Set token in cookie
       document.cookie = `token=${data.token}; path=/; max-age=${60 * 60 * 24 * 7}`; // 7 days
       
-      router.push('/c'); // Redirect to /c page after registration
+      router.push('/chat/new'); // Redirect to new chat after registration
     } catch (error) {
       console.error('Registration error:', error);
       setError(error instanceof Error ? error.message : 'An unknown error occurred');

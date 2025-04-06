@@ -5,7 +5,7 @@ export function middleware(request: NextRequest) {
   const token = request.cookies.get('token')
   const isAuthPage = request.nextUrl.pathname.startsWith('/login') || 
                     request.nextUrl.pathname.startsWith('/register')
-  const isProtectedRoute = request.nextUrl.pathname.startsWith('/c')
+  const isProtectedRoute = request.nextUrl.pathname.startsWith('/chat')
   const isLandingPage = request.nextUrl.pathname === '/'
 
   // Allow access to landing page without authentication
@@ -19,8 +19,8 @@ export function middleware(request: NextRequest) {
   }
 
   if (token && isAuthPage) {
-    // Redirect to /c if trying to access auth pages with token
-    return NextResponse.redirect(new URL('/c', request.url))
+    // Redirect to new chat if trying to access auth pages with token
+    return NextResponse.redirect(new URL('/chat/new', request.url))
   }
 
   return NextResponse.next()

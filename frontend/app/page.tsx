@@ -29,6 +29,7 @@ export default function CodexLanding() {
         Codex enables users to create a personalized AI-powered documentation system simply by providing a URL as input.
       </p>
       
+      <div className="flex flex-row ">
 
       <Link href="/register" className="bg-blue-500 hover:bg-blue-600 text-white px-5 py-3 rounded-lg">
         sign up
@@ -37,6 +38,7 @@ export default function CodexLanding() {
       <Link href="/login" className="bg-blue-500 hover:bg-blue-600 text-white px-5 py-3 rounded-lg">
         login
       </Link>
+      </div>
         
       
 

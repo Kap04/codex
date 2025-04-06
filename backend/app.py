@@ -58,6 +58,8 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "your-secret-key")  # Make sure to set
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_DELTA = timedelta(days=1)
 
+
+
 def setup_database():
     """Create necessary tables if they don't exist"""
     try:
@@ -94,7 +96,11 @@ def token_required(f):
     def decorated(*args, **kwargs):
         token = None
         if 'Authorization' in request.headers:
-            token = request.headers['Authorization'].split(" ")[1]
+            auth_header = request.headers['Authorization']
+            if auth_header.startswith('Bearer '):
+                token = auth_header.split(" ")[1]
+            else:
+                token = auth_header
         
         if not token:
             return jsonify({'message': 'Token is missing'}), 401
@@ -104,7 +110,8 @@ def token_required(f):
             current_user = supabase.table("users").select("*").eq("id", data['user_id']).execute()
             if not current_user.data:
                 return jsonify({'message': 'Invalid token'}), 401
-        except:
+        except Exception as e:
+            print(f"Token validation error: {str(e)}")
             return jsonify({'message': 'Invalid token'}), 401
         
         return f(*args, **kwargs)
@@ -209,6 +216,244 @@ def login():
         import traceback
         print(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
+
+
+
+
+
+
+
+
+
+
+@app.route('/sessions', methods=['GET'])
+@token_required
+def get_sessions():
+    try:
+        # Get user_id from JWT token
+        token = request.headers['Authorization'].split(" ")[1]
+        data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = data['user_id']
+        
+        # Query all sessions for this user
+        response = supabase.table("chat_sessions") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .order("updated_at", desc=True) \
+            .execute()
+        
+        return jsonify({"sessions": response.data})
+        
+    except Exception as e:
+        print(f"Error fetching sessions: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/sessions', methods=['POST'])
+@token_required
+def create_session():
+    try:
+        # Get user_id from JWT token
+        token = request.headers['Authorization'].split(" ")[1]
+        data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = data['user_id']
+        
+        # Get request data
+        req_data = request.json
+        doc_id = req_data.get('doc_id')
+        title = req_data.get('title', f"New Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        
+        if not doc_id:
+            # Get the most recent doc_id if not provided
+            doc_response = supabase.table("documents") \
+                .select("doc_id") \
+                .limit(1) \
+                .order("created_at", desc=True) \
+                .execute()
+                
+            if not doc_response.data:
+                return jsonify({
+                    "error": "No documents found. Please process a documentation first.",
+                    "code": "NO_DOCUMENTS"
+                }), 400
+                
+            doc_id = doc_response.data[0]['doc_id']
+        
+        # Create new session
+        session_id = str(uuid.uuid4())
+        supabase.table("chat_sessions").insert({
+            "id": session_id,
+            "user_id": user_id,
+            "doc_id": doc_id,
+            "title": title
+        }).execute()
+        
+        return jsonify({
+            "message": "Session created successfully",
+            "session_id": session_id
+        })
+        
+    except Exception as e:
+        print(f"Error creating session: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/sessions/<session_id>', methods=['DELETE'])
+@token_required
+def delete_session(session_id):
+    try:
+        # Get user_id from JWT token
+        token = request.headers['Authorization'].split(" ")[1]
+        data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = data['user_id']
+        
+        # Check if session belongs to user
+        session = supabase.table("chat_sessions") \
+            .select("*") \
+            .eq("id", session_id) \
+            .eq("user_id", user_id) \
+            .execute()
+            
+        if not session.data:
+            return jsonify({"error": "Session not found or you don't have permission"}), 403
+            
+        # Delete session (will cascade delete messages)
+        supabase.table("chat_sessions") \
+            .delete() \
+            .eq("id", session_id) \
+            .execute()
+            
+        return jsonify({"message": "Session deleted successfully"})
+        
+    except Exception as e:
+        print(f"Error deleting session: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/sessions/<session_id>/messages', methods=['GET'])
+@token_required
+def get_messages(session_id):
+    try:
+        # Get user_id from JWT token
+        token = request.headers['Authorization'].split(" ")[1]
+        data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = data['user_id']
+        
+        # Check if session belongs to user
+        session = supabase.table("chat_sessions") \
+            .select("*") \
+            .eq("id", session_id) \
+            .eq("user_id", user_id) \
+            .execute()
+            
+        if not session.data:
+            return jsonify({"error": "Session not found or you don't have permission"}), 403
+            
+        # Get messages for this session
+        messages = supabase.table("chat_messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at") \
+            .execute()
+            
+        return jsonify({"messages": messages.data})
+        
+    except Exception as e:
+        print(f"Error fetching messages: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/sessions/<session_id>/messages', methods=['POST'])
+@token_required
+def create_message(session_id):
+    try:
+        # Get user_id from JWT token
+        token = request.headers['Authorization'].split(" ")[1]
+        data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = data['user_id']
+        
+        # Check if session belongs to user
+        session = supabase.table("chat_sessions") \
+            .select("*") \
+            .eq("id", session_id) \
+            .eq("user_id", user_id) \
+            .execute()
+            
+        if not session.data:
+            return jsonify({"error": "Session not found or you don't have permission"}), 403
+            
+        # Get request data
+        req_data = request.json
+        question = req_data.get('question')
+        
+        if not question:
+            return jsonify({"error": "Question is required"}), 400
+            
+        # Create user message
+        message_id = str(uuid.uuid4())
+        supabase.table("chat_messages").insert({
+            "id": message_id,
+            "session_id": session_id,
+            "is_user": True,
+            "content": question
+        }).execute()
+        
+        # Get doc_id from the session
+        doc_id = session.data[0]['doc_id']
+        
+        # Create embedding for the question
+        question_embedding = create_embeddings(question)
+        
+        # Query Supabase for relevant document chunks using vector similarity
+        query_response = supabase.rpc(
+            "match_documents",
+            {
+                "query_embedding": question_embedding,
+                "match_document_id": doc_id,
+                "match_threshold": 0.7,
+                "match_count": 3
+            }
+        ).execute()
+        
+        relevant_docs = query_response.data
+        
+        # Generate AI response
+        if not relevant_docs:
+            ai_response = "I couldn't find relevant information to answer your question in the provided documentation."
+        else:
+            # Construct context from relevant documents
+            context = "\n\n".join([doc["content"] for doc in relevant_docs])
+            
+            # Generate response using Mistral AI
+            ai_response = query_mistral(question, context)
+        
+        # Store AI response
+        ai_message_id = str(uuid.uuid4())
+        supabase.table("chat_messages").insert({
+            "id": ai_message_id,
+            "session_id": session_id,
+            "is_user": False,
+            "content": ai_response
+        }).execute()
+        
+        # Update session's updated_at timestamp
+        supabase.table("chat_sessions") \
+            .update({"updated_at": datetime.now().isoformat()}) \
+            .eq("id", session_id) \
+            .execute()
+        
+        return jsonify({
+            "message": "Message created successfully",
+            "response": ai_response
+        })
+        
+    except Exception as e:
+        print(f"Error creating message: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+
+
+
+        
 
 @app.route('/crawl', methods=['POST'])
 @token_required

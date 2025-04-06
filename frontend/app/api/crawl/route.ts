@@ -49,7 +49,13 @@ export async function POST(request: NextRequest) {
     };
 
     try {
-      const response = await axios.post(`${backendUrl}/crawl`, { url }, axiosConfig);
+      const response = await axios.post(`${backendUrl}/crawl`, { url }, {
+        ...axiosConfig,
+        headers: {
+          ...axiosConfig.headers,
+          'Authorization': `Bearer ${request.headers.get('authorization')?.split(' ')[1]}`
+        }
+      });
       
       return NextResponse.json(response.data);
     } catch (error) {
