@@ -1,79 +1,114 @@
 // app/api/sessions/[sessionId]/messages/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import axios from 'axios';
 
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { sessionId: string } }
+  request: Request,
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    const { sessionId } = params;
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { sessionId } = await params;
+    
+    if (!sessionId) {
+      throw new Error('Session ID is required');
     }
     
-    // Extract token from Authorization header
-    const token = authHeader.startsWith('Bearer ') 
-      ? authHeader.substring(7) 
+    console.log(`Attempting to fetch messages for session ID: ${sessionId}`);
+
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader) {
+      console.error('Authorization header is missing.');
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.split(' ')[1]
       : authHeader;
 
-    // Forward request to backend
-    const response = await fetch(`${process.env.BACKEND_URL}/sessions/${sessionId}/messages`, {
+    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:5000';
+    console.log(`Making request to: ${backendUrl}/sessions/${sessionId}/messages`);
+    
+    const response = await axios.get(`${backendUrl}/sessions/${sessionId}/messages`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }
     });
 
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return NextResponse.json({ error: data.error || 'Something went wrong' }, { status: response.status });
-    }
-
-    return NextResponse.json(data);
+    console.log('Response received:', response.status);
+    return Response.json(response.data);
   } catch (error) {
-    console.error(`Error in sessions/${params.sessionId}/messages API:`, error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('Detailed error:', error);
+    if (axios.isAxiosError(error)) {
+      console.error('Axios error details:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
+      return Response.json({ 
+        error: 'Failed to fetch messages',
+        details: error.response?.data || error.message,
+        status: error.response?.status
+      }, { status: error.response?.status || 500 });
+    }
+    return Response.json({ 
+      error: 'Failed to fetch messages',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
 }
 
 export async function POST(
-  request: NextRequest,
-  { params }: { params: { sessionId: string } }
+  request: Request,
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    const { sessionId } = params;
+    const { sessionId } = await params;
+    
+    if (!sessionId) {
+      throw new Error('Session ID is required');
+    }
+
+    console.log(`Creating message for session ID: ${sessionId}`);
+
     const authHeader = request.headers.get('authorization');
     if (!authHeader) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    // Extract token from Authorization header
     const token = authHeader.startsWith('Bearer ') 
-      ? authHeader.substring(7) 
+      ? authHeader.split(' ')[1]
       : authHeader;
 
     const body = await request.json();
+    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:5000';
+    console.log(`Making request to: ${backendUrl}/sessions/${sessionId}/messages`);
 
-    // Forward request to backend
-    const response = await fetch(`${process.env.BACKEND_URL}/sessions/${sessionId}/messages`, {
-      method: 'POST',
+    const response = await axios.post(`${backendUrl}/sessions/${sessionId}/messages`, body, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
+      }
     });
 
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return NextResponse.json({ error: data.error || 'Something went wrong' }, { status: response.status });
-    }
-
-    return NextResponse.json(data);
+    console.log('Response received:', response.status);
+    return Response.json(response.data);
   } catch (error) {
-    console.error(`Error in sessions/${params.sessionId}/messages API:`, error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('Detailed error:', error);
+    if (axios.isAxiosError(error)) {
+      console.error('Axios error details:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
+      return Response.json({ 
+        error: 'Failed to create message',
+        details: error.response?.data || error.message,
+        status: error.response?.status
+      }, { status: error.response?.status || 500 });
+    }
+    return Response.json({ 
+      error: 'Failed to create message',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
 }

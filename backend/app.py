@@ -257,6 +257,8 @@ def create_session():
         data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = data['user_id']
         
+        print(f"Creating session for user_id: {user_id}")
+        
         # Get request data
         req_data = request.json
         doc_id = req_data.get('doc_id')
@@ -269,14 +271,17 @@ def create_session():
                 .limit(1) \
                 .order("created_at", desc=True) \
                 .execute()
-                
+            
             if not doc_response.data:
+                print("No documents found for session creation.")
                 return jsonify({
                     "error": "No documents found. Please process a documentation first.",
                     "code": "NO_DOCUMENTS"
                 }), 400
-                
+            
             doc_id = doc_response.data[0]['doc_id']
+        
+        print(f"Using doc_id: {doc_id} for session creation.")
         
         # Create new session
         session_id = str(uuid.uuid4())
@@ -287,6 +292,8 @@ def create_session():
             "title": title
         }).execute()
         
+        print(f"Session created successfully with session_id: {session_id}")
+        
         return jsonify({
             "message": "Session created successfully",
             "session_id": session_id
@@ -294,6 +301,8 @@ def create_session():
         
     except Exception as e:
         print(f"Error creating session: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/sessions/<session_id>', methods=['DELETE'])
@@ -316,11 +325,12 @@ def delete_session(session_id):
             return jsonify({"error": "Session not found or you don't have permission"}), 403
             
         # Delete session (will cascade delete messages)
-        supabase.table("chat_sessions") \
+        result = supabase.table("chat_sessions") \
             .delete() \
             .eq("id", session_id) \
             .execute()
-            
+        print("Delete result:", result)
+
         return jsonify({"message": "Session deleted successfully"})
         
     except Exception as e:
@@ -368,6 +378,8 @@ def create_message(session_id):
         data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = data['user_id']
         
+        print(f"Creating message for session_id: {session_id}, user_id: {user_id}")
+        
         # Check if session belongs to user
         session = supabase.table("chat_sessions") \
             .select("*") \
@@ -376,6 +388,7 @@ def create_message(session_id):
             .execute()
             
         if not session.data:
+            print("Session not found or user does not have permission.")
             return jsonify({"error": "Session not found or you don't have permission"}), 403
             
         # Get request data
@@ -383,6 +396,7 @@ def create_message(session_id):
         question = req_data.get('question')
         
         if not question:
+            print("Question is required but not provided.")
             return jsonify({"error": "Question is required"}), 400
             
         # Create user message
@@ -393,6 +407,8 @@ def create_message(session_id):
             "is_user": True,
             "content": question
         }).execute()
+        
+        print(f"User message created with message_id: {message_id}")
         
         # Get doc_id from the session
         doc_id = session.data[0]['doc_id']
@@ -432,6 +448,8 @@ def create_message(session_id):
             "content": ai_response
         }).execute()
         
+        print(f"AI response created with message_id: {ai_message_id}")
+        
         # Update session's updated_at timestamp
         supabase.table("chat_sessions") \
             .update({"updated_at": datetime.now().isoformat()}) \
@@ -445,6 +463,8 @@ def create_message(session_id):
         
     except Exception as e:
         print(f"Error creating message: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -738,6 +758,28 @@ def query_mistral(question: str, context: str) -> str:
     
     return chat_response.choices[0].message.content
 
+@app.route('/documents', methods=['GET'])
+@token_required
+def get_documents():
+    try:
+        # Get user_id from JWT token
+        token = request.headers['Authorization'].split(" ")[1]
+        data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = data['user_id']
+        
+        # Fetch all documents
+        response = supabase.table("documents") \
+            .select("*") \
+            .order("created_at", desc=True) \
+            .execute()
+            
+        return jsonify(response.data)
+        
+    except Exception as e:
+        print(f"Error fetching documents: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5000)

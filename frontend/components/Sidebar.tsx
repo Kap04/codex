@@ -77,9 +77,14 @@ export default function Sidebar() {
       
       setSessions(sessions.filter(session => session.id !== id));
       
-      // If we're currently viewing this session, redirect to home
+      // If we're currently viewing this session, create a new session and redirect
       if (pathname === `/chat/${id}`) {
-        router.push('/');
+        const response = await axios.post('/api/sessions', {}, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        router.push(`/chat/${response.data.session_id}`);
       }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to delete session');

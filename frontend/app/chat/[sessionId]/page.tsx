@@ -27,7 +27,8 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+ // const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string>('');
   const [docId, setDocId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -43,6 +44,34 @@ export default function ChatPage({ params }: ChatPageProps) {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // const handleDeleteSession = async () => {
+  //   try {
+  //     setIsDeleting(true);
+  //     setError('');
+
+  //     const token = localStorage.getItem('token');
+  //     if (!token) {
+  //       router.push('/login');
+  //       return;
+  //     }
+
+  //     const response = await axios.delete(`/api/sessions/${sessionId}`, {
+  //       headers: {
+  //         'Authorization': `Bearer ${token}`
+  //       }
+  //     });
+
+  //     if (response.data.newSessionId) {
+  //       router.push(`/chat/${response.data.newSessionId}`);
+  //     }
+  //   } catch (err: any) {
+  //     console.error('Error deleting session:', err);
+  //     setError(err.response?.data?.error || 'Failed to delete session');
+  //   } finally {
+  //     setIsDeleting(false);
+  //   }
+  // };
 
   const fetchMessages = async () => {
     try {
@@ -98,7 +127,6 @@ export default function ChatPage({ params }: ChatPageProps) {
         }
       });
 
-      // Add user message and AI response to the messages list
       const userMessageObj = {
         id: Date.now().toString(),
         content: userMessage,
@@ -133,6 +161,16 @@ export default function ChatPage({ params }: ChatPageProps) {
       <div className="flex-1 flex flex-col h-full">
         <div className="flex-1 overflow-y-auto p-4">
           <div className="max-w-3xl mx-auto">
+            <div className="flex justify-end mb-4">
+              {/* <button
+                onClick={handleDeleteSession}
+                disabled={isDeleting}
+                className="text-gray-400 hover:text-red-500 disabled:opacity-50"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Chat'}
+              </button> */}
+            </div>
+                
             {messages.length === 0 && !docId ? (
               <div className="text-center py-8 text-gray-400">
                 <h2 className="text-2xl font-bold mb-4">Start a new conversation</h2>

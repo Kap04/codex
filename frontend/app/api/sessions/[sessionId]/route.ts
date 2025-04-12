@@ -1,39 +1,58 @@
 // app/api/sessions/[sessionId]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import axios from 'axios';
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { sessionId: string } }
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
-    const { sessionId } = params;
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    
-    // Extract token from Authorization header
-    const token = authHeader.startsWith('Bearer ') 
-      ? authHeader.substring(7) 
-      : authHeader;
+    const { sessionId } = await params; // Await the dynamic parameters
 
-    // Forward request to backend
-    const response = await fetch(`${process.env.BACKEND_URL}/sessions/${sessionId}`, {
-      method: 'DELETE',
+    const token = request.headers.get('authorization');
+    if (!token) {
+      return new Response(JSON.stringify({ error: 'No authorization token provided' }), {
+        status: 401,
+      });
+    }
+
+    if (!sessionId) {
+      return new Response(JSON.stringify({ error: 'Session ID is required' }), {
+        status: 400,
+      });
+    }
+
+    // Use a fallback if API_BASE_URL is not set
+    const apiBaseUrl = process.env.API_BASE_URL || 'http://127.0.0.1:5000';
+    console.log(`Making delete request to: ${apiBaseUrl}/sessions/${sessionId}`);
+
+    // Delete the session
+    await axios.delete(`${apiBaseUrl}/sessions/${sessionId}`, {
       headers: {
-        'Authorization': `Bearer ${token}`
+        'Authorization': token
       }
     });
 
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return NextResponse.json({ error: data.error || 'Something went wrong' }, { status: response.status });
-    }
+    // Remove the automatic creation of a new session
+    // const newSessionResponse = await axios.post(`${apiBaseUrl}/sessions`, {}, {
+    //   headers: {
+    //     'Authorization': token
+    //   }
+    // });
 
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error(`Error in sessions/${params.sessionId} API:`, error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // Return only the success message
+    return new Response(JSON.stringify({
+      message: 'Session deleted successfully'
+    }), {
+      status: 200,
+    });
+
+  } catch (error: any) {
+    console.error('Error in DELETE session:', error);
+    return new Response(JSON.stringify({ 
+      error: error.response?.data?.error || 'Failed to delete session'
+    }), {
+      status: error.response?.status || 500,
+    });
   }
 }
