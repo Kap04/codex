@@ -408,7 +408,7 @@ def create_message(session_id):
             "content": question
         }).execute()
         
-        print(f"User message created with message_id: {message_id}")
+        #print(f"User message created with message_id: {message_id}")
         
         # Get doc_id from the session
         doc_id = session.data[0]['doc_id']
@@ -448,7 +448,7 @@ def create_message(session_id):
             "content": ai_response
         }).execute()
         
-        print(f"AI response created with message_id: {ai_message_id}")
+        # print(f"AI response created with message_id: {ai_message_id}")
         
         # Update session's updated_at timestamp
         supabase.table("chat_sessions") \
@@ -746,8 +746,8 @@ def query_mistral(question: str, context: str) -> str:
     Provide a concise and accurate answer based only on the information in the context. If the answer cannot be determined from the context, please state that.
     """
     # Log token count for the prompt
-    #token_count = get_token_count(prompt)
-    #print(f"Prompt token count: {token_count}")
+    # token_count = get_token_count(prompt)
+    # print(f"Prompt token count: {token_count}")
     
     chat_response = mistral_client.chat.complete(
         model=MISTRAL_MODEL,
@@ -780,6 +780,8 @@ def get_documents():
         import traceback
         print(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
+
+
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5000)
