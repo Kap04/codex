@@ -25,6 +25,8 @@ import  traceback
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from mistral_common.tokens.tokenizers.tekken import SpecialTokenPolicy
 
+import re
+from bs4 import BeautifulSoup
 
 
 # Instantiate the tokenizer (using v3 as per docs)
@@ -274,6 +276,7 @@ def create_session():
             
             if not doc_response.data:
                 print("No documents found for session creation.")
+                # Create a default document or prompt user to upload one
                 return jsonify({
                     "error": "No documents found. Please process a documentation first.",
                     "code": "NO_DOCUMENTS"
@@ -422,10 +425,12 @@ def create_message(session_id):
             {
                 "query_embedding": question_embedding,
                 "match_document_id": doc_id,
-                "match_threshold": 0.7,
+                "match_threshold": 0.2,
                 "match_count": 3
             }
         ).execute()
+        
+        print(f"Query response: {query_response.data}")
         
         relevant_docs = query_response.data
         
@@ -437,7 +442,7 @@ def create_message(session_id):
             context = "\n\n".join([doc["content"] for doc in relevant_docs])
             
             # Generate response using Mistral AI
-            ai_response = query_mistral(question, context)
+            ai_response = query_mistral_with_prefix(question, context)
         
         # Store AI response
         ai_message_id = str(uuid.uuid4())
@@ -501,7 +506,7 @@ def crawl():
                 run_conf = CrawlerRunConfig(
                     cache_mode=CacheMode.BYPASS,
                     word_count_threshold=1,
-                    page_timeout=60000,  # 60 seconds timeout
+                    page_timeout=120000,  # 120 seconds timeout
                     deep_crawl_strategy=deep_crawl_strategy
                 )
                 
@@ -518,7 +523,7 @@ def crawl():
                 print(f"Crawler Error: {str(crawler_error)}")
                 raise
         
-        # Run the async crawler and cess the list of results
+        # Run the async crawler and process the list of results
         try:
             results = asyncio.run(run_crawler())
             
@@ -540,38 +545,61 @@ def crawl():
                     print(f"URL: {href} | Text: {text}")
                 print("\n")
             
-            # Example: Aggregate raw markdown from all pages if needed
+            # Aggregate raw markdown from all pages
             aggregated_raw_markdown = "\n\n".join(
                 [result.markdown.raw_markdown for result in results if result.markdown and hasattr(result.markdown, "raw_markdown")]
             )
             
+            # Process the document and store each chunk separately
+            chunker = SectionHeaderChunking()
+            chunks = chunker.process_document(aggregated_raw_markdown)
+            
+            # Store the aggregated document in Supabase
+            doc_id = str(uuid.uuid4())
+            
+            # Insert the document into the documents table
+            supabase.table("documents").insert({
+                "id": str(uuid.uuid4()),  # Unique UUID for the primary key
+                "doc_id": doc_id,
+                "url": url,
+                "content": aggregated_raw_markdown
+            }).execute()
+            
+            # Process all chunks at once more efficiently
+            try:
+                # Create embeddings for all chunks in batches
+                all_embeddings = create_embeddings_batch(chunks)
+                
+                # Then store each embedding
+                for idx, embedding in enumerate(all_embeddings):
+                    supabase.table("document_chunks").insert({
+                        "id": str(uuid.uuid4()),
+                        "doc_id": doc_id,
+                        "embedding": embedding,
+                        "chunk_content": chunks[idx]  # Store the chunk content for reference
+                    }).execute()
+                    print(f"Stored embedding {idx+1}/{len(all_embeddings)}: {embedding[:5]}...")
+                
+                return jsonify({
+                    "message": "Document crawled and stored successfully",
+                    "doc_id": doc_id,
+                    "chunk_count": len(chunks),
+                    "markdown_length": len(aggregated_raw_markdown)
+                })
+                
+            except Exception as embedding_error:
+                print(f"Embedding Generation Error: {str(embedding_error)}")
+                return jsonify({
+                    "error": "Failed to generate embeddings",
+                    "details": str(embedding_error)
+                }), 500
+        
         except Exception as async_error:
             print(f"Async Crawler Execution Error: {str(async_error)}")
             return jsonify({
                 "error": "Failed to crawl the documentation",
                 "details": str(async_error)
             }), 500
-        
-        # Store the aggregated document in Supabase
-        doc_id = str(uuid.uuid4())
-        
-        # Create embeddings for the aggregated markdown content
-        markdown_embedding = create_embeddings(aggregated_raw_markdown)
-        
-        # Insert document into Supabase
-        supabase.table("documents").insert({
-            "id": str(uuid.uuid4()),  # Unique UUID for the primary key
-            "doc_id": doc_id,
-            "url": url,
-            "content": aggregated_raw_markdown,
-            "embedding": markdown_embedding
-        }).execute()
-        
-        return jsonify({
-            "message": "Document crawled and stored successfully",
-            "doc_id": doc_id,
-            "markdown_length": len(aggregated_raw_markdown)
-        })
         
     except Exception as e:
         # Print full traceback for detailed error information
@@ -584,8 +612,6 @@ def crawl():
             "details": str(e),
             "traceback": traceback.format_exc()
         }), 500
-
-
 
 @app.route('/ask', methods=['POST'])
 @token_required
@@ -614,10 +640,12 @@ def ask():
             {
                 "query_embedding": question_embedding,  
                 "match_document_id": doc_id,
-                "match_threshold": 0.7,
+                "match_threshold": 0.8,
                 "match_count": 3
             }
         ).execute()
+        
+        print(f"Query response: {query_response.data}")
         
         relevant_docs = query_response.data
         
@@ -629,8 +657,8 @@ def ask():
         # Construct context from relevant documents
         context = "\n\n".join([doc["content"] for doc in relevant_docs])
         
-        # Generate response using Mistral AI
-        response = query_mistral(question, context)
+        # Generate response using Mistral AI with prefix
+        response = query_mistral_with_prefix(question, context)
         
         return jsonify({"answer": response})
         
@@ -655,104 +683,72 @@ def get_token_count(text: str) -> int:
     return len(tokens)
 
 
-
-def get_embeddings_by_chunks(text: str, max_tokens: int = 8000, delay: float = 0.5, max_retries: int = 5) -> List[float]:
-    """
-    Splits the input text into token-based chunks (each under max_tokens) 
-    and returns the concatenated embeddings.
-    Implements exponential backoff to handle rate limit errors.
-    Uses the v1 tokenizer for mistral-embed without filtering any tokens.
-    """
-    # Tokenize the full text first using our helper function
-    tokens, _ = tokenize_text(text)
-    print(f"Total tokens for document: {len(tokens)}")
+def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
+    """Create embeddings for a batch of text chunks efficiently."""
+    if not texts:
+        print("No texts provided for embedding.")
+        return []
     
-    # Create chunks based on token count
-    token_chunks = [tokens[i:i + max_tokens] for i in range(0, len(tokens), max_tokens)]
+    print(f"Creating embeddings for {len(texts)} chunks")
     
-    embeddings = []
-    for idx, chunk in enumerate(token_chunks, start=1):
-        # Directly decode the chunk without filtering any tokens
-        chunk_text = tokenizer.decode(chunk)
-        token_count = len(chunk)
-        print(f"Processing chunk {idx} with {token_count} tokens")
+    try:
+        # Process texts directly with optimized batching
+        embeddings = get_embeddings_by_chunks_v2(texts, chunk_size=50, batch_size=8)
         
-        # Exponential backoff for rate limiting
-        retries = 0
-        while retries < max_retries:
-            try:
-                response = mistral_client.embeddings.create(
-                    model="mistral-embed",
-                    inputs=[chunk_text]
-                )
-                embeddings.extend(response.data[0].embedding)
-                time.sleep(delay)
-                break  # Exit retry loop on success
-            except Exception as e:
-                if "rate limit" in str(e).lower() or "429" in str(e):
-                    retries += 1
-                    sleep_time = delay * (2 ** retries) + random.uniform(0, 0.5)
-                    print(f"Rate limit hit on chunk {idx}. Retrying in {sleep_time:.2f} seconds (Attempt {retries}/{max_retries})...")
-                    time.sleep(sleep_time)
-                else:
-                    raise e
-        else:
-            raise Exception("Exceeded maximum retries due to rate limit errors.")
-    return embeddings
-
-
-
-
+        if not embeddings:
+            raise ValueError("No embeddings were returned")
+        
+        print(f"Successfully created {len(embeddings)} embeddings")
+        return embeddings
+        
+    except Exception as e:
+        print(f"Error creating batch embeddings: {e}")
+        raise
 
 def create_embeddings(text: str) -> List[float]:
-    """
-    Create embeddings using batch processing with Mistral AI API.
-    Instead of concatenating chunk embeddings, we aggregate them (average)
-    so that the final vector dimension remains consistent (e.g., 1024).
-    """
-    # Get the list of embeddings for each chunk.
-    # Assume get_embeddings_by_chunks returns a concatenated list of embeddings
-    # from each chunk.
-    chunk_embeddings = get_embeddings_by_chunks(text, max_tokens=3000)
-    
-    # For aggregation, we need to know the dimension of each individual embedding.
-    # This might be provided by the API or be documented (e.g., 1024 for mistral-embed).
-    embedding_dim = 1024  # update based on your model's specification
-    
-    # Calculate how many chunks we have by dividing the total length by the embedding dimension.
-    num_chunks = len(chunk_embeddings) // embedding_dim
-    if num_chunks == 0:
-        raise ValueError("No embeddings were returned.")
-    
-    # Reshape the embeddings list into a 2D array: (num_chunks, embedding_dim)
-    embeddings_array = np.array(chunk_embeddings).reshape((num_chunks, embedding_dim))
-    
-    # Aggregate (e.g., average) the embeddings along the chunks axis to get a single vector.
-    aggregated_embedding = embeddings_array.mean(axis=0)
-    
-    return aggregated_embedding.tolist()
+    try:
+        # Pass a single text string, not wrapped in a list
+        chunk_embeddings = get_embeddings_by_chunks_v2([text], chunk_size=50)
+        if not chunk_embeddings:
+            raise ValueError("No embeddings were returned.")
+        
+        # Convert directly into a (num_chunks × embedding_dim) array
+        arr = np.array(chunk_embeddings)             # shape: (num_chunks, embedding_dim)
+        
+        aggregated_embedding = arr.mean(axis=0)      # average across chunks
+        print(f"Created embedding of dimension {aggregated_embedding.shape[0]}")
+        return aggregated_embedding.tolist()
+    except Exception as e:
+        print(f"Error creating embeddings: {e}")
+        raise
 
 
-
-def query_mistral(question: str, context: str) -> str:
-    """Query Mistral AI with the question and context and log token usage."""
-    prompt = f"""Answer the following question based on the provided documentation context:
+def query_mistral_with_prefix(question: str, context: str) -> str:
+    """Query Mistral AI with the question and context using a prefix and log token usage."""
+    prefix = "Coding Assistant:"
+    
+    #Answer using the provided context:
+    prompt = f"""
 
     Context:
     {context}
 
     Question: {question}
 
-    Provide a concise and accurate answer based only on the information in the context. If the answer cannot be determined from the context, please state that.
     """
+    
     # Log token count for the prompt
-    # token_count = get_token_count(prompt)
-    # print(f"Prompt token count: {token_count}")
+    token_count = get_token_count(prompt)
+    print(f"Prompt token count: {token_count}")
     
     chat_response = mistral_client.chat.complete(
         model=MISTRAL_MODEL,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": prefix, "prefix": True}
+        ],
         temperature=0.7,
+        top_p=0.5,
         max_tokens=1000
     )
     
@@ -782,6 +778,188 @@ def get_documents():
         return jsonify({"error": str(e)}), 500
 
 
+
+def get_embeddings_by_chunks_v2(data: List[str], chunk_size: int = 50, delay: float = 1.0, 
+                                max_retries: int = 5, batch_size: int = 8) -> List[List[float]]:
+    """Process text data and retrieve embeddings in batches."""
+    if not data:
+        print("No data provided for embedding.")
+        return []
+
+    # Process each text entry in batches
+    total_texts = len(data)
+    embeddings = []
+    
+    # Process texts in batches to reduce API calls
+    for batch_start in range(0, total_texts, batch_size):
+        batch_end = min(batch_start + batch_size, total_texts)
+        current_batch = data[batch_start:batch_end]
+        print(f"Processing batch {batch_start//batch_size + 1} ({batch_start}-{batch_end-1} of {total_texts} texts)")
+        
+        retries = 0
+        while retries < max_retries:
+            try:
+                # Send batch directly to API
+                response = mistral_client.embeddings.create(model="mistral-embed", inputs=current_batch)
+                
+                if not response.data:
+                    print(f"No embeddings returned for batch {batch_start//batch_size + 1}.")
+                    break
+                
+                # Extract embeddings from response
+                batch_embeddings = [d.embedding for d in response.data]
+                embeddings.extend(batch_embeddings)
+                print(f"Successfully processed {len(batch_embeddings)} texts in this batch")
+                
+                # Add delay between batches to avoid rate limits
+                time.sleep(delay)
+                break  # Exit retry loop on success
+                
+            except Exception as e:
+                if "rate limit" in str(e).lower() or "429" in str(e):
+                    retries += 1
+                    sleep_time = delay * (2 ** retries) + random.uniform(0, 1.0)
+                    print(f"Rate limit hit on batch {batch_start//batch_size + 1}. Retrying in {sleep_time:.2f} seconds (Attempt {retries}/{max_retries})...")
+                    time.sleep(sleep_time)
+                else:
+                    print(f"Error processing batch {batch_start//batch_size + 1}: {str(e)}")
+                    raise e
+        else:
+            print(f"Exceeded maximum retries for batch {batch_start//batch_size + 1}.")
+            raise Exception("Exceeded maximum retries due to rate limit errors.")
+    
+    if not embeddings:
+        print("No embeddings were returned for any texts.")
+    
+    return embeddings
+
+# def get_embeddings_by_chunks_v2(
+#     data: List[str],
+#     chunk_size: int,
+#     batch_size: int = 8,
+#     delay: float = 0.5,
+#     max_retries: int = 5
+# ) -> List[List[float]]:
+#     """
+#     Splits `data` (a list of texts) into chunks of `chunk_size` items,
+#     then sends those chunks in batches of `batch_size` to Mistral's embeddings API.
+#     Returns a flat list of embeddings corresponding 1:1 to the original `data` items.
+#     """
+#     if not data:
+#         print("No data provided for embedding.")
+#         return []
+
+#     # 1) Split into chunks of up to chunk_size texts each
+#     chunks = [data[i : i + chunk_size] for i in range(0, len(data), chunk_size)]
+#     all_embeddings: List[List[float]] = []
+
+#     # 2) Group those chunks into batches of `batch_size` API calls
+#     for batch_start in range(0, len(chunks), batch_size):
+#         batch = chunks[batch_start : batch_start + batch_size]
+#         # flatten batch into one list of texts
+#         inputs = [text for chunk in batch for text in chunk]
+
+#         # 3) Retry on rate limit up to max_retries
+#         for attempt in range(1, max_retries + 1):
+#             try:
+#                 resp = mistral_client.embeddings.create(
+#                     model="mistral-embed",
+#                     inputs=inputs
+#                 )
+#                 # extend with each returned embedding
+#                 all_embeddings.extend([d.embedding for d in resp.data])
+#                 # brief pause (optional, you can reduce or remove)
+#                 time.sleep(delay)
+#                 break
+#             except Exception as e:
+#                 err = str(e).lower()
+#                 if "rate limit" in err or "429" in err:
+#                     backoff = delay * (2 ** attempt) + random.uniform(0, 0.5)
+#                     print(f"Rate limit on batch {batch_start//batch_size + 1}, "
+#                           f"retry {attempt}/{max_retries} sleeping {backoff:.1f}s…")
+#                     time.sleep(backoff)
+#                 else:
+#                     # non–rate-limit error, give up immediately
+#                     print(f"Error on batch {batch_start//batch_size + 1}: {e}")
+#                     raise
+#         else:
+#             # exhausted retries
+#             print(f"Skipping batch {batch_start//batch_size + 1} after {max_retries} rate‐limit retries.")
+#             continue
+
+#     if not all_embeddings:
+#         print("No embeddings were returned for any batches.")
+#     return all_embeddings
+
+
+
+# Define a simple sentence tokenizer using regex
+def simple_sentence_tokenize(text):
+    sentence_endings = re.compile(r'(?<=[.!?]) +')
+    sentences = sentence_endings.split(text)
+    return [sentence.strip() for sentence in sentences if sentence.strip()]
+
+# Update the SectionHeaderChunking class to use the new tokenizer
+class SectionHeaderChunking:
+    def __init__(self, header_pattern=r'<h[1-6]>.*?</h[1-6]>', window_size=500, step=200):
+        self.header_pattern = header_pattern
+        self.window_size = window_size
+        self.step = step
+
+    def chunk_by_headers(self, html_content):
+        # Use BeautifulSoup to parse HTML and extract text
+        soup = BeautifulSoup(html_content, 'html.parser')
+        text = soup.get_text()
+        
+        # Split text by section headers
+        sections = re.split(self.header_pattern, text)
+        return sections
+
+    def sliding_window_chunking(self, text):
+        words = text.split()
+        chunks = []
+        for i in range(0, len(words) - self.window_size + 1, self.step):
+            chunks.append(' '.join(words[i:i + self.window_size]))
+        return chunks
+
+    def process_document(self, html_content):
+        sections = self.chunk_by_headers(html_content)
+        all_chunks = []
+        for section in sections:
+            # Fallback to simple sentence splits if section is too small
+            if len(section.split()) < self.window_size:
+                sentences = simple_sentence_tokenize(section)
+                all_chunks.extend(sentences)
+            else:
+                all_chunks.extend(self.sliding_window_chunking(section))
+        return all_chunks
+
+
+
+
+@app.route('/documents/<doc_id>/chunks', methods=['GET'])
+@token_required
+def get_document_chunks(doc_id):
+    try:
+        # Get user_id from JWT token
+        token = request.headers['Authorization'].split(" ")[1]
+        data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = data['user_id']
+        
+        # Fetch all chunks for the specified document
+        response = supabase.table("document_chunks") \
+            .select("*") \
+            .eq("doc_id", doc_id) \
+            .order("created_at", desc=True) \
+            .execute()
+            
+        return jsonify(response.data)
+        
+    except Exception as e:
+        print(f"Error fetching document chunks: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5000)

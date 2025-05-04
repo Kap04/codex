@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     
     // Axios request configuration with increased timeout (5 minutes)
     const axiosConfig: AxiosRequestConfig = {
-      timeout: 300000, // 5 minutes
+      timeout: 600000000, // 5 minutes
       httpAgent: new http.Agent({ keepAlive: true }),
       httpsAgent: new https.Agent({ keepAlive: true }),
       headers: {

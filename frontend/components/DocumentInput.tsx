@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import axios from 'axios';
 
+
+
 interface DocumentInputProps {
   onDocumentProcessed: (docId: string) => void;
 }
@@ -25,8 +27,10 @@ export default function DocumentInput({ onDocumentProcessed }: DocumentInputProp
       
       const response = await axios.post('/api/crawl', { url }, {
         headers: {
-          'Authorization': `Bearer ${token}`
-        }
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 600000 // 10 minutes
       });
       
       setCrawlStatus('Documentation successfully processed!');

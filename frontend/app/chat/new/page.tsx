@@ -25,6 +25,7 @@ export default function NewChatPage() {
           headers: {
             'Authorization': `Bearer ${token}`
           }
+          
         });
 
         console.log('Sessions response:', sessionsResponse.data);

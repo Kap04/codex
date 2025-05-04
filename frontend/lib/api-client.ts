@@ -3,6 +3,7 @@ import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 // Create a custom instance of axios
 const apiClient = axios.create({
   baseURL: '/',
+  timeout: 60000000000000000000000000000000000,  //changes 
   headers: {
     'Content-Type': 'application/json',
   },

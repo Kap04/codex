@@ -161,15 +161,7 @@ export default function ChatPage({ params }: ChatPageProps) {
       <div className="flex-1 flex flex-col h-full">
         <div className="flex-1 overflow-y-auto p-4">
           <div className="max-w-3xl mx-auto">
-            <div className="flex justify-end mb-4">
-              {/* <button
-                onClick={handleDeleteSession}
-                disabled={isDeleting}
-                className="text-gray-400 hover:text-red-500 disabled:opacity-50"
-              >
-                {isDeleting ? 'Deleting...' : 'Delete Chat'}
-              </button> */}
-            </div>
+            
                 
             {messages.length === 0 && !docId ? (
               <div className="text-center py-8 text-gray-400">

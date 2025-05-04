@@ -31,7 +31,8 @@ export default function DocumentsPage() {
         const response = await axios.get('/api/documents', {
           headers: {
             'Authorization': `Bearer ${token}`
-          }
+          },
+          timeout: 60000000 // 10 minutes
         });
 
         setDocuments(response.data);
