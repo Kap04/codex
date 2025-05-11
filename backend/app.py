@@ -418,6 +418,7 @@ def create_message(session_id):
         
         # Create embedding for the question
         question_embedding = create_embeddings(question)
+        print(f"Question embedding created with dimension: {len(question_embedding)}")
         
         # Query Supabase for relevant document chunks using vector similarity
         query_response = supabase.rpc(
@@ -425,21 +426,39 @@ def create_message(session_id):
             {
                 "query_embedding": question_embedding,
                 "match_document_id": doc_id,
-                "match_threshold": 0.2,
-                "match_count": 3
+                "match_threshold": 0.01,  # Lower threshold significantly to get more matches
+                "match_count": 5  # Increase number of chunks to retrieve
             }
         ).execute()
         
         print(f"Query response: {query_response.data}")
         
+        # Debug: Check if we have any chunks for this doc_id
+        chunks_check = supabase.table("document_chunks") \
+            .select("*") \
+            .eq("doc_id", doc_id) \
+            .limit(1) \
+            .execute()
+        print(f"Total chunks for doc_id {doc_id}: {len(chunks_check.data)}")
+        
         relevant_docs = query_response.data
         
         # Generate AI response
         if not relevant_docs:
+            print("No relevant documents found in the query response")
             ai_response = "I couldn't find relevant information to answer your question in the provided documentation."
         else:
+            # Debug: Print the content of each relevant doc
+            print("\nRelevant document contents:")
+            for idx, doc in enumerate(relevant_docs):
+                print(f"\nDoc {idx + 1}:")
+                print(f"Raw doc: {doc}")  # Print the entire doc object
+                print(f"Content: {doc.get('content', 'NO CONTENT')}")
+                print(f"Similarity: {doc.get('similarity', 'NO SIMILARITY')}")
+            
             # Construct context from relevant documents
-            context = "\n\n".join([doc["content"] for doc in relevant_docs])
+            context = "\n\n".join([doc.get("content", "") for doc in relevant_docs])
+            print(f"\nFinal context being sent to AI: {context[:200]}...")  # Print first 200 chars of context
             
             # Generate response using Mistral AI
             ai_response = query_mistral_with_prefix(question, context)
@@ -575,10 +594,19 @@ def crawl():
                     supabase.table("document_chunks").insert({
                         "id": str(uuid.uuid4()),
                         "doc_id": doc_id,
-                        "embedding": embedding,
-                        "chunk_content": chunks[idx]  # Store the chunk content for reference
+                        "chunk_content": chunks[idx],  # Use chunk_content as defined in the SQL schema
+                        "embedding": embedding
                     }).execute()
                     print(f"Stored embedding {idx+1}/{len(all_embeddings)}: {embedding[:5]}...")
+                
+                # Debug: Print the first few chunks to verify storage
+                print("\nFirst few stored chunks:")
+                chunks_response = supabase.table("document_chunks") \
+                    .select("*") \
+                    .eq("doc_id", doc_id) \
+                    .limit(3) \
+                    .execute()
+                print(f"Stored chunks sample: {chunks_response.data}")
                 
                 return jsonify({
                     "message": "Document crawled and stored successfully",
@@ -640,8 +668,8 @@ def ask():
             {
                 "query_embedding": question_embedding,  
                 "match_document_id": doc_id,
-                "match_threshold": 0.8,
-                "match_count": 3
+                "match_threshold": 0.1,  # Lower threshold to get more matches
+                "match_count": 5  # Increase number of chunks to retrieve
             }
         ).execute()
         
@@ -655,7 +683,7 @@ def ask():
             })
             
         # Construct context from relevant documents
-        context = "\n\n".join([doc["content"] for doc in relevant_docs])
+        context = "\n\n".join([doc.get("content", "") for doc in relevant_docs])
         
         # Generate response using Mistral AI with prefix
         response = query_mistral_with_prefix(question, context)
@@ -796,11 +824,37 @@ def get_embeddings_by_chunks_v2(data: List[str], chunk_size: int = 50, delay: fl
         current_batch = data[batch_start:batch_end]
         print(f"Processing batch {batch_start//batch_size + 1} ({batch_start}-{batch_end-1} of {total_texts} texts)")
         
+        # Check token count for each text in the batch
+        processed_batch = []
+        for text in current_batch:
+            token_count = get_token_count(text)
+            if token_count > 8000:  # Leave some buffer below the 8192 limit
+                # Split text into smaller chunks
+                sentences = simple_sentence_tokenize(text)
+                current_chunk = []
+                current_chunk_tokens = 0
+                
+                for sentence in sentences:
+                    sentence_tokens = get_token_count(sentence)
+                    if current_chunk_tokens + sentence_tokens > 8000:
+                        if current_chunk:
+                            processed_batch.append(' '.join(current_chunk))
+                        current_chunk = [sentence]
+                        current_chunk_tokens = sentence_tokens
+                    else:
+                        current_chunk.append(sentence)
+                        current_chunk_tokens += sentence_tokens
+                
+                if current_chunk:
+                    processed_batch.append(' '.join(current_chunk))
+            else:
+                processed_batch.append(text)
+        
         retries = 0
         while retries < max_retries:
             try:
                 # Send batch directly to API
-                response = mistral_client.embeddings.create(model="mistral-embed", inputs=current_batch)
+                response = mistral_client.embeddings.create(model="mistral-embed", inputs=processed_batch)
                 
                 if not response.data:
                     print(f"No embeddings returned for batch {batch_start//batch_size + 1}.")
@@ -832,65 +886,6 @@ def get_embeddings_by_chunks_v2(data: List[str], chunk_size: int = 50, delay: fl
         print("No embeddings were returned for any texts.")
     
     return embeddings
-
-# def get_embeddings_by_chunks_v2(
-#     data: List[str],
-#     chunk_size: int,
-#     batch_size: int = 8,
-#     delay: float = 0.5,
-#     max_retries: int = 5
-# ) -> List[List[float]]:
-#     """
-#     Splits `data` (a list of texts) into chunks of `chunk_size` items,
-#     then sends those chunks in batches of `batch_size` to Mistral's embeddings API.
-#     Returns a flat list of embeddings corresponding 1:1 to the original `data` items.
-#     """
-#     if not data:
-#         print("No data provided for embedding.")
-#         return []
-
-#     # 1) Split into chunks of up to chunk_size texts each
-#     chunks = [data[i : i + chunk_size] for i in range(0, len(data), chunk_size)]
-#     all_embeddings: List[List[float]] = []
-
-#     # 2) Group those chunks into batches of `batch_size` API calls
-#     for batch_start in range(0, len(chunks), batch_size):
-#         batch = chunks[batch_start : batch_start + batch_size]
-#         # flatten batch into one list of texts
-#         inputs = [text for chunk in batch for text in chunk]
-
-#         # 3) Retry on rate limit up to max_retries
-#         for attempt in range(1, max_retries + 1):
-#             try:
-#                 resp = mistral_client.embeddings.create(
-#                     model="mistral-embed",
-#                     inputs=inputs
-#                 )
-#                 # extend with each returned embedding
-#                 all_embeddings.extend([d.embedding for d in resp.data])
-#                 # brief pause (optional, you can reduce or remove)
-#                 time.sleep(delay)
-#                 break
-#             except Exception as e:
-#                 err = str(e).lower()
-#                 if "rate limit" in err or "429" in err:
-#                     backoff = delay * (2 ** attempt) + random.uniform(0, 0.5)
-#                     print(f"Rate limit on batch {batch_start//batch_size + 1}, "
-#                           f"retry {attempt}/{max_retries} sleeping {backoff:.1f}s…")
-#                     time.sleep(backoff)
-#                 else:
-#                     # non–rate-limit error, give up immediately
-#                     print(f"Error on batch {batch_start//batch_size + 1}: {e}")
-#                     raise
-#         else:
-#             # exhausted retries
-#             print(f"Skipping batch {batch_start//batch_size + 1} after {max_retries} rate‐limit retries.")
-#             continue
-
-#     if not all_embeddings:
-#         print("No embeddings were returned for any batches.")
-#     return all_embeddings
-
 
 
 # Define a simple sentence tokenizer using regex
