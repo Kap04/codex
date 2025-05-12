@@ -824,26 +824,27 @@ def get_embeddings_by_chunks_v2(data: List[str], chunk_size: int = 50, delay: fl
         current_batch = data[batch_start:batch_end]
         print(f"Processing batch {batch_start//batch_size + 1} ({batch_start}-{batch_end-1} of {total_texts} texts)")
         
-        # Check token count for each text in the batch
+        # Verify token count for each text in the batch
         processed_batch = []
         for text in current_batch:
             token_count = get_token_count(text)
-            if token_count > 8000:  # Leave some buffer below the 8192 limit
-                # Split text into smaller chunks
-                sentences = simple_sentence_tokenize(text)
+            if token_count > 2000:  # Strict token limit check
+                print(f"Warning: Text has {token_count} tokens, splitting further...")
+                # Split into smaller chunks
+                words = text.split()
                 current_chunk = []
                 current_chunk_tokens = 0
                 
-                for sentence in sentences:
-                    sentence_tokens = get_token_count(sentence)
-                    if current_chunk_tokens + sentence_tokens > 8000:
+                for word in words:
+                    word_tokens = get_token_count(word)
+                    if current_chunk_tokens + word_tokens > 2000:
                         if current_chunk:
                             processed_batch.append(' '.join(current_chunk))
-                        current_chunk = [sentence]
-                        current_chunk_tokens = sentence_tokens
+                        current_chunk = [word]
+                        current_chunk_tokens = word_tokens
                     else:
-                        current_chunk.append(sentence)
-                        current_chunk_tokens += sentence_tokens
+                        current_chunk.append(word)
+                        current_chunk_tokens += word_tokens
                 
                 if current_chunk:
                     processed_batch.append(' '.join(current_chunk))
@@ -853,8 +854,21 @@ def get_embeddings_by_chunks_v2(data: List[str], chunk_size: int = 50, delay: fl
         retries = 0
         while retries < max_retries:
             try:
-                # Send batch directly to API
-                response = mistral_client.embeddings.create(model="mistral-embed", inputs=processed_batch)
+                # Verify token counts one final time before API call
+                verified_batch = []
+                for text in processed_batch:
+                    token_count = get_token_count(text)
+                    if token_count > 2000:
+                        print(f"Warning: Text still has {token_count} tokens after processing, skipping...")
+                        continue
+                    verified_batch.append(text)
+                
+                if not verified_batch:
+                    print("No valid texts in batch after verification, skipping...")
+                    break
+                
+                # Send batch to API
+                response = mistral_client.embeddings.create(model="mistral-embed", inputs=verified_batch)
                 
                 if not response.data:
                     print(f"No embeddings returned for batch {batch_start//batch_size + 1}.")
@@ -896,10 +910,9 @@ def simple_sentence_tokenize(text):
 
 # Update the SectionHeaderChunking class to use the new tokenizer
 class SectionHeaderChunking:
-    def __init__(self, header_pattern=r'<h[1-6]>.*?</h[1-6]>', window_size=500, step=200):
+    def __init__(self, header_pattern=r'<h[1-6]>.*?</h[1-6]>', max_tokens=2000):  # Reduced from 4000 to 2000
         self.header_pattern = header_pattern
-        self.window_size = window_size
-        self.step = step
+        self.max_tokens = max_tokens  # Set a much lower token limit for safety
 
     def chunk_by_headers(self, html_content):
         # Use BeautifulSoup to parse HTML and extract text
@@ -910,24 +923,92 @@ class SectionHeaderChunking:
         sections = re.split(self.header_pattern, text)
         return sections
 
-    def sliding_window_chunking(self, text):
-        words = text.split()
-        chunks = []
-        for i in range(0, len(words) - self.window_size + 1, self.step):
-            chunks.append(' '.join(words[i:i + self.window_size]))
-        return chunks
-
     def process_document(self, html_content):
         sections = self.chunk_by_headers(html_content)
         all_chunks = []
+        
         for section in sections:
-            # Fallback to simple sentence splits if section is too small
-            if len(section.split()) < self.window_size:
-                sentences = simple_sentence_tokenize(section)
-                all_chunks.extend(sentences)
+            if not section.strip():
+                continue
+                
+            # Get token count for the section
+            token_count = get_token_count(section)
+            
+            if token_count <= self.max_tokens:
+                # If section is within token limit, add it as is
+                all_chunks.append(section)
             else:
-                all_chunks.extend(self.sliding_window_chunking(section))
-        return all_chunks
+                # If section is too large, split it into smaller chunks
+                sentences = simple_sentence_tokenize(section)
+                current_chunk = []
+                current_chunk_tokens = 0
+                
+                for sentence in sentences:
+                    sentence_tokens = get_token_count(sentence)
+                    
+                    # If a single sentence is too large, split it into words
+                    if sentence_tokens > self.max_tokens:
+                        words = sentence.split()
+                        current_word_chunk = []
+                        current_word_chunk_tokens = 0
+                        
+                        for word in words:
+                            word_tokens = get_token_count(word)
+                            if current_word_chunk_tokens + word_tokens > self.max_tokens:
+                                if current_word_chunk:
+                                    all_chunks.append(' '.join(current_word_chunk))
+                                current_word_chunk = [word]
+                                current_word_chunk_tokens = word_tokens
+                            else:
+                                current_word_chunk.append(word)
+                                current_word_chunk_tokens += word_tokens
+                        
+                        if current_word_chunk:
+                            all_chunks.append(' '.join(current_word_chunk))
+                        continue
+                    
+                    # If adding this sentence would exceed the limit, save current chunk and start new one
+                    if current_chunk_tokens + sentence_tokens > self.max_tokens:
+                        if current_chunk:
+                            all_chunks.append(' '.join(current_chunk))
+                        current_chunk = [sentence]
+                        current_chunk_tokens = sentence_tokens
+                    else:
+                        current_chunk.append(sentence)
+                        current_chunk_tokens += sentence_tokens
+                
+                # Add the last chunk if it exists
+                if current_chunk:
+                    all_chunks.append(' '.join(current_chunk))
+        
+        # Final verification and cleanup
+        final_chunks = []
+        for chunk in all_chunks:
+            if chunk.strip():
+                token_count = get_token_count(chunk)
+                if token_count > self.max_tokens:
+                    # If still too large, split into words
+                    words = chunk.split()
+                    current_word_chunk = []
+                    current_word_chunk_tokens = 0
+                    
+                    for word in words:
+                        word_tokens = get_token_count(word)
+                        if current_word_chunk_tokens + word_tokens > self.max_tokens:
+                            if current_word_chunk:
+                                final_chunks.append(' '.join(current_word_chunk))
+                            current_word_chunk = [word]
+                            current_word_chunk_tokens = word_tokens
+                        else:
+                            current_word_chunk.append(word)
+                            current_word_chunk_tokens += word_tokens
+                    
+                    if current_word_chunk:
+                        final_chunks.append(' '.join(current_word_chunk))
+                else:
+                    final_chunks.append(chunk)
+        
+        return final_chunks
 
 
 

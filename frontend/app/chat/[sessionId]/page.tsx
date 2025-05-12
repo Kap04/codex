@@ -1,14 +1,15 @@
 // app/chat/[sessionId]/page.tsx
 'use client'
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, FC, ReactNode } from 'react';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
-import Markdown from 'react-markdown';
+import { use } from 'react';
+import ReactMarkdown from 'react-markdown';
 import Sidebar from '@/components/Sidebar';
 import DocumentInput from '@/components/DocumentInput';
-import { use } from 'react';
 
+// Message shape coming from the API
 interface Message {
   id: string;
   content: string;
@@ -16,84 +17,66 @@ interface Message {
   created_at: string;
 }
 
+// Props for the dynamic route
 interface ChatPageProps {
-  params: Promise<{
-    sessionId: string;
-  }>;
+  params: Promise<{ sessionId: string }>;
 }
+
+// CodeBlock component for fenced code with copy button
+interface CodeBlockProps {
+  className?: string;
+  children: ReactNode;
+}
+
+const CodeBlock: FC<CodeBlockProps> = ({ className, children }) => {
+  const [copied, setCopied] = useState(false);
+  const codeText = String(children).replace(/\n$/, '');
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(codeText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group my-4">
+      <pre className={`block overflow-auto w-full rounded-lg p-4 bg-gray-900 text-sm ${className ?? ''}`}>
+        <code>{codeText}</code>
+      </pre>
+      <button
+        onClick={handleCopy}
+        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-700 hover:bg-gray-600 text-white text-xs px-2 py-1 rounded"
+      >
+        {copied ? 'Copied!' : 'Copy'}
+      </button>
+    </div>
+  );
+};
 
 export default function ChatPage({ params }: ChatPageProps) {
   const { sessionId } = use(params);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
- // const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string>('');
   const [docId, setDocId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  useEffect(() => {
-    fetchMessages();
-  }, [sessionId]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  // const handleDeleteSession = async () => {
-  //   try {
-  //     setIsDeleting(true);
-  //     setError('');
-
-  //     const token = localStorage.getItem('token');
-  //     if (!token) {
-  //       router.push('/login');
-  //       return;
-  //     }
-
-  //     const response = await axios.delete(`/api/sessions/${sessionId}`, {
-  //       headers: {
-  //         'Authorization': `Bearer ${token}`
-  //       }
-  //     });
-
-  //     if (response.data.newSessionId) {
-  //       router.push(`/chat/${response.data.newSessionId}`);
-  //     }
-  //   } catch (err: any) {
-  //     console.error('Error deleting session:', err);
-  //     setError(err.response?.data?.error || 'Failed to delete session');
-  //   } finally {
-  //     setIsDeleting(false);
-  //   }
-  // };
+  useEffect(() => { fetchMessages(); }, [sessionId]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   const fetchMessages = async () => {
     try {
       const token = localStorage.getItem('token');
-      if (!token) {
-        router.push('/login');
-        return;
-      }
-
-      const response = await axios.get(`/api/sessions/${sessionId}/messages`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (response.data && response.data.messages) {
-        setMessages(response.data.messages);
-      } else {
-        setMessages([]);
-      }
+      if (!token) return router.push('/login');
+      const response = await axios.get(
+        `/api/sessions/${sessionId}/messages`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setMessages(response.data.messages || []);
     } catch (err: any) {
-      console.error('Error fetching messages:', err);
+      console.error(err);
       setError(err.response?.data?.error || 'Failed to fetch messages');
     }
   };
@@ -101,91 +84,64 @@ export default function ChatPage({ params }: ChatPageProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
-
-    if (!docId) {
-      setError('Please process a documentation first before asking questions.');
-      return;
-    }
+    if (!docId) return setError('Process a document first.');
 
     const userMessage = input.trim();
-    setInput('');
-    setIsLoading(true);
-    setError('');
+    setInput(''); setIsLoading(true); setError('');
 
     try {
       const token = localStorage.getItem('token');
-      if (!token) {
-        router.push('/login');
-        return;
-      }
-
-      const response = await axios.post(`/api/sessions/${sessionId}/messages`, {
-        question: userMessage
-      }, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      const userMessageObj = {
-        id: Date.now().toString(),
-        content: userMessage,
-        is_user: true,
-        created_at: new Date().toISOString()
-      };
-      
-      const aiMessageObj = {
-        id: (Date.now() + 1).toString(),
-        content: response.data.response,
-        is_user: false,
-        created_at: new Date().toISOString()
-      };
-      
-      setMessages(prev => [...prev, userMessageObj, aiMessageObj]);
+      if (!token) return router.push('/login');
+      const response = await axios.post(
+        `/api/sessions/${sessionId}/messages`,
+        { question: userMessage },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const user: Message = { id: Date.now().toString(), content: userMessage, is_user: true, created_at: new Date().toISOString() };
+      const ai: Message = { id: (Date.now()+1).toString(), content: response.data.response, is_user: false, created_at: new Date().toISOString() };
+      setMessages(prev => [...prev, user, ai]);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to send message');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDocumentProcessed = (newDocId: string) => {
-    setDocId(newDocId);
-    setError('');
+    } finally { setIsLoading(false); }
   };
 
   return (
     <div className="flex h-screen bg-gray-900 text-white">
       <Sidebar />
-      
-      <div className="flex-1 flex flex-col h-full">
+      <div className="flex-1 flex flex-col">
         <div className="flex-1 overflow-y-auto p-4">
           <div className="max-w-3xl mx-auto">
-            
-                
-            {messages.length === 0 && !docId ? (
+            {messages.length===0 && !docId ? (
               <div className="text-center py-8 text-gray-400">
-                <h2 className="text-2xl font-bold mb-4">Start a new conversation</h2>
-                <p>Process a documentation URL to begin chatting.</p>
+                <h2 className="text-2xl font-bold mb-4">Start a conversation</h2>
+                <p>Process a documentation URL to begin.</p>
               </div>
             ) : (
-              messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`mb-6 ${message.is_user ? 'text-right' : 'text-left'}`}
-                >
-                  <div
-                    className={`inline-block max-w-[80%] p-4 rounded-lg ${
-                      message.is_user 
-                        ? 'bg-blue-700 text-white rounded-br-none' 
-                        : 'bg-gray-800 text-white rounded-bl-none'
-                    }`}
-                  >
-                    {message.is_user ? (
-                      <div>{message.content}</div>
-                    ) : (
+              messages.map(msg => (
+                <div key={msg.id} className={`mb-6 ${msg.is_user?'text-right':'text-left'}`}>
+                  <div className={`inline-block max-w-[80%] p-4 rounded-lg ${msg.is_user?'bg-blue-700 text-white rounded-br-none':'bg-gray-800 text-white rounded-bl-none'}`}>
+                    {msg.is_user ? <div>{msg.content}</div> : (
                       <div className="prose prose-invert">
-                        <Markdown>{message.content}</Markdown>
+                        <ReactMarkdown
+                          components={{
+                            p({ node, children, ...props }) {
+                              const first = (node as any).children[0];
+                              if (first && first.type==='element' && first.tagName==='code') {
+                                return <>{children}</>;
+                              }
+                              return <p {...props}>{children}</p>;
+                            },
+                            code({ inline, children, ...props }: any) {
+                              const text = String(children).replace(/\n$/, '');
+                              const wordCount = text.trim().split(/\s+/).length;
+                              if (inline || wordCount < 3) {
+                                return <code className="bg-gray-700 px-1 rounded" {...props}>{children}</code>;
+                              }
+                              return <CodeBlock {...props}>{children}</CodeBlock>;
+                            }
+                          }}>
+                          {msg.content}
+                        </ReactMarkdown>
                       </div>
                     )}
                   </div>
@@ -194,42 +150,23 @@ export default function ChatPage({ params }: ChatPageProps) {
             )}
             {isLoading && (
               <div className="mb-6 text-left">
-                <div className="inline-block max-w-[80%] p-4 rounded-lg bg-gray-800 text-white rounded-bl-none">
-                  <div className="flex items-center gap-2">
-                    <div className="animate-pulse">AI is thinking...</div>
-                  </div>
+                <div className="inline-block max-w-[80%] p-4 rounded-lg bg-gray-800 text-white rounded-bl-none animate-pulse">
+                  AI is thinking...
                 </div>
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
         </div>
-        
         <div className="p-4 border-t border-gray-800">
-          <div className="max-w-3xl mx-auto">
-            <DocumentInput onDocumentProcessed={handleDocumentProcessed} />
-            
-            {error && (
-              <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-md text-red-200">
-                {error}
-              </div>
-            )}
+          <div className="max-w-3xl mx-auto flex flex-col gap-4">
+            <DocumentInput onDocumentProcessed={setDocId as any} />
+            {error && <div className="p-3 bg-red-900/50 border border-red-700 rounded text-red-200">{error}</div>}
             <form onSubmit={handleSubmit} className="flex gap-2">
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask a question about the documentation..."
-                className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
-                disabled={isLoading || !docId}
-              />
-              <button
-                type="submit"
-                disabled={isLoading || !input.trim() || !docId}
-                className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-50"
-              >
-                Send
-              </button>
+              <input value={input} onChange={e=>setInput(e.target.value)} disabled={!docId||isLoading}
+                placeholder="Ask a question..." className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-blue-600"/>
+              <button type="submit" disabled={!input.trim()||!docId||isLoading}
+                className="bg-blue-600 px-4 py-2 rounded disabled:opacity-50">Send</button>
             </form>
           </div>
         </div>
