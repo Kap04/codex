@@ -411,10 +411,15 @@ def create_message(session_id):
             "content": question
         }).execute()
         
-        #print(f"User message created with message_id: {message_id}")
-        
         # Get doc_id from the session
         doc_id = session.data[0]['doc_id']
+        
+        if not doc_id:
+            print("No document ID associated with this session.")
+            return jsonify({
+                "error": "No document has been processed for this session. Please process a documentation first.",
+                "code": "NO_DOCUMENT"
+            }), 400
         
         # Create embedding for the question
         question_embedding = create_embeddings(question)
@@ -426,7 +431,7 @@ def create_message(session_id):
             {
                 "query_embedding": question_embedding,
                 "match_document_id": doc_id,
-                "match_threshold": 0.01,  # Lower threshold significantly to get more matches
+                "match_threshold": 0.3,  # Lower threshold significantly to get more matches
                 "match_count": 5  # Increase number of chunks to retrieve
             }
         ).execute()
@@ -446,7 +451,7 @@ def create_message(session_id):
         # Generate AI response
         if not relevant_docs:
             print("No relevant documents found in the query response")
-            ai_response = "I couldn't find relevant information to answer your question in the provided documentation."
+            ai_response = "I couldn't find relevant information to answer your question in the provided documentation. Please make sure you have processed the correct documentation for this session."
         else:
             # Debug: Print the content of each relevant doc
             print("\nRelevant document contents:")
@@ -471,8 +476,6 @@ def create_message(session_id):
             "is_user": False,
             "content": ai_response
         }).execute()
-        
-        # print(f"AI response created with message_id: {ai_message_id}")
         
         # Update session's updated_at timestamp
         supabase.table("chat_sessions") \
@@ -647,17 +650,22 @@ def ask():
     try:
         data = request.json
         question = data.get('question')
+        doc_id = data.get('doc_id')  # Get doc_id from request
         
         if not question:
             return jsonify({"error": "Question is required"}), 400
             
-        # Get the most recent doc_id from the documents table
-        response = supabase.table("documents").select("doc_id").limit(1).order("created_at", desc=True).execute()
-        
-        if not response.data:
-            return jsonify({"error": "No documents found. Please process a documentation first."}), 400
+        if not doc_id:
+            return jsonify({"error": "Document ID is required"}), 400
             
-        doc_id = response.data[0]['doc_id']
+        # Verify document exists
+        doc_response = supabase.table("documents") \
+            .select("doc_id") \
+            .eq("doc_id", doc_id) \
+            .execute()
+            
+        if not doc_response.data:
+            return jsonify({"error": "Document not found"}), 404
         
         # Create embedding for the question
         question_embedding = create_embeddings(question)
@@ -679,7 +687,7 @@ def ask():
         
         if not relevant_docs:
             return jsonify({
-                "answer": "I couldn't find relevant information to answer your question in the provided documentation."
+                "answer": "I couldn't find relevant information to answer your question in the provided documentation. Please make sure you have processed the correct documentation."
             })
             
         # Construct context from relevant documents
@@ -1037,5 +1045,27 @@ def get_document_chunks(doc_id):
         print(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/auth/refresh', methods=['POST'])
+@token_required
+def refresh_token():
+    try:
+        # Get user_id from JWT token
+        token = request.headers['Authorization'].split(" ")[1]
+        data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = data['user_id']
+
+        # Create a new token
+        new_token = create_token(user_id)
+        print(f"Token refreshed successfully for user: {user_id}")
+
+        return jsonify({
+            "message": "Token refreshed successfully",
+            "token": new_token
+        })
+
+    except Exception as e:
+        print(f"Error refreshing token: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)
