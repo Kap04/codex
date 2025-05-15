@@ -5,9 +5,10 @@ import axios from 'axios';
 
 interface DocumentInputProps {
   onDocumentProcessed: (docId: string) => void;
+  sessionId: string;
 }
 
-export default function DocumentInput({ onDocumentProcessed }: DocumentInputProps) {
+export default function DocumentInput({ onDocumentProcessed, sessionId }: DocumentInputProps) {
   const [url, setUrl] = useState('');
   const [isCrawling, setIsCrawling] = useState(false);
   const [error, setError] = useState('');
@@ -25,7 +26,7 @@ export default function DocumentInput({ onDocumentProcessed }: DocumentInputProp
         throw new Error('Not authenticated. Please log in.');
       }
       
-      const response = await axios.post('/api/crawl', { url }, {
+      const response = await axios.post('/api/crawl', { url, session_id: sessionId }, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'

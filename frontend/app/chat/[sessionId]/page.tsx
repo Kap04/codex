@@ -160,7 +160,7 @@ export default function ChatPage({ params }: ChatPageProps) {
         </div>
         <div className="p-4 border-t border-gray-800">
           <div className="max-w-3xl mx-auto flex flex-col gap-4">
-            <DocumentInput onDocumentProcessed={setDocId as any} />
+            <DocumentInput onDocumentProcessed={setDocId as any} sessionId={sessionId} />
             {error && <div className="p-3 bg-red-900/50 border border-red-700 rounded text-red-200">{error}</div>}
             <form onSubmit={handleSubmit} className="flex gap-2">
               <input value={input} onChange={e=>setInput(e.target.value)} disabled={!docId||isLoading}

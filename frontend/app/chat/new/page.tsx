@@ -82,26 +82,7 @@ export default function NewChatPage() {
       </div>
     );
   }
-
-  if (error) {
-    console.log('Rendering error state');
-    return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-        <Sidebar />
-        <div className="max-w-md w-full mx-4 p-6 bg-gray-800 rounded-lg shadow-lg">
-          <h1 className="text-xl font-semibold mb-4">Error</h1>
-          <p className="text-red-400 mb-4">{error}</p>
-          <button
-            onClick={() => router.push('/chat/new/document')}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+  
   console.log('Rendering default state');
   return (
     <div className="flex h-screen bg-gray-900 text-white">

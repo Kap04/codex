@@ -77,6 +77,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Set token in cookie
       document.cookie = `token=${data.token}; path=/; max-age=${60 * 60 * 24 * 7}`; // 7 days
       
+      // Check for existing sessions and create a new one if needed
+      try {
+        const sessionsResponse = await fetch('http://localhost:5000/sessions', {
+          headers: {
+            'Authorization': `Bearer ${data.token}`
+          }
+        });
+        
+        const sessionsData = await sessionsResponse.json();
+        
+        if (!sessionsResponse.ok) {
+          console.error('Failed to fetch sessions:', sessionsData);
+          throw new Error('Failed to fetch sessions');
+        }
+        
+        if (!sessionsData.sessions || sessionsData.sessions.length === 0) {
+          // Create a new session if none exist
+          const newSessionResponse = await fetch('http://localhost:5000/sessions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${data.token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              title: "New Chat",
+              create_without_doc: true // Flag to indicate we want to create a session without requiring a document
+            })
+          });
+          
+          const newSessionData = await newSessionResponse.json();
+          
+          if (!newSessionResponse.ok) {
+            console.error('Failed to create new session:', newSessionData);
+            throw new Error('Failed to create new session');
+          }
+          
+          if (newSessionData.session_id) {
+            router.push(`/chat/${newSessionData.session_id}`);
+            return;
+          }
+        }
+      } catch (sessionError) {
+        console.error('Error handling sessions:', sessionError);
+      }
+      
       router.push('/chat/new'); // Redirect to new chat after login
     } catch (error) {
       console.error('Login error:', error);
@@ -114,6 +159,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Set token in cookie
       document.cookie = `token=${data.token}; path=/; max-age=${60 * 60 * 24 * 7}`; // 7 days
+      
+      // Create a new session for the new user
+      try {
+        const newSessionResponse = await fetch('http://localhost:5000/sessions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${data.token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            title: "New Chat",
+            create_without_doc: true // Flag to indicate we want to create a session without requiring a document
+          })
+        });
+        
+        const newSessionData = await newSessionResponse.json();
+        
+        if (!newSessionResponse.ok) {
+          console.error('Failed to create new session:', newSessionData);
+          throw new Error('Failed to create new session');
+        }
+        
+        if (newSessionData.session_id) {
+          router.push(`/chat/${newSessionData.session_id}`);
+          return;
+        }
+      } catch (sessionError) {
+        console.error('Error creating new session:', sessionError);
+      }
       
       router.push('/chat/new'); // Redirect to new chat after registration
     } catch (error) {

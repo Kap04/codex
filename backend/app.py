@@ -265,8 +265,10 @@ def create_session():
         req_data = request.json
         doc_id = req_data.get('doc_id')
         title = req_data.get('title', f"New Chat {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        create_without_doc = req_data.get('create_without_doc', False)
         
-        if not doc_id:
+        # Only try to get doc_id if not creating without doc and no doc_id provided
+        if not doc_id and not create_without_doc:
             # Get the most recent doc_id if not provided
             doc_response = supabase.table("documents") \
                 .select("doc_id") \
@@ -276,7 +278,6 @@ def create_session():
             
             if not doc_response.data:
                 print("No documents found for session creation.")
-                # Create a default document or prompt user to upload one
                 return jsonify({
                     "error": "No documents found. Please process a documentation first.",
                     "code": "NO_DOCUMENTS"
@@ -288,12 +289,17 @@ def create_session():
         
         # Create new session
         session_id = str(uuid.uuid4())
-        supabase.table("chat_sessions").insert({
+        session_data = {
             "id": session_id,
             "user_id": user_id,
-            "doc_id": doc_id,
             "title": title
-        }).execute()
+        }
+        
+        # Only add doc_id if it exists and we're not creating without doc
+        if doc_id and not create_without_doc:
+            session_data["doc_id"] = doc_id
+            
+        supabase.table("chat_sessions").insert(session_data).execute()
         
         print(f"Session created successfully with session_id: {session_id}")
         
@@ -412,61 +418,58 @@ def create_message(session_id):
         }).execute()
         
         # Get doc_id from the session
-        doc_id = session.data[0]['doc_id']
+        doc_id = session.data[0].get('doc_id')
         
         if not doc_id:
             print("No document ID associated with this session.")
-            return jsonify({
-                "error": "No document has been processed for this session. Please process a documentation first.",
-                "code": "NO_DOCUMENT"
-            }), 400
-        
-        # Create embedding for the question
-        question_embedding = create_embeddings(question)
-        print(f"Question embedding created with dimension: {len(question_embedding)}")
-        
-        # Query Supabase for relevant document chunks using vector similarity
-        query_response = supabase.rpc(
-            "match_documents",
-            {
-                "query_embedding": question_embedding,
-                "match_document_id": doc_id,
-                "match_threshold": 0.3,  # Lower threshold significantly to get more matches
-                "match_count": 5  # Increase number of chunks to retrieve
-            }
-        ).execute()
-        
-        print(f"Query response: {query_response.data}")
-        
-        # Debug: Check if we have any chunks for this doc_id
-        chunks_check = supabase.table("document_chunks") \
-            .select("*") \
-            .eq("doc_id", doc_id) \
-            .limit(1) \
-            .execute()
-        print(f"Total chunks for doc_id {doc_id}: {len(chunks_check.data)}")
-        
-        relevant_docs = query_response.data
-        
-        # Generate AI response
-        if not relevant_docs:
-            print("No relevant documents found in the query response")
-            ai_response = "I couldn't find relevant information to answer your question in the provided documentation. Please make sure you have processed the correct documentation for this session."
+            ai_response = "Please process a documentation first by providing a URL. Once you've processed a document, you can ask questions about it."
         else:
-            # Debug: Print the content of each relevant doc
-            print("\nRelevant document contents:")
-            for idx, doc in enumerate(relevant_docs):
-                print(f"\nDoc {idx + 1}:")
-                print(f"Raw doc: {doc}")  # Print the entire doc object
-                print(f"Content: {doc.get('content', 'NO CONTENT')}")
-                print(f"Similarity: {doc.get('similarity', 'NO SIMILARITY')}")
+            # Create embedding for the question
+            question_embedding = create_embeddings(question)
+            print(f"Question embedding created with dimension: {len(question_embedding)}")
             
-            # Construct context from relevant documents
-            context = "\n\n".join([doc.get("content", "") for doc in relevant_docs])
-            print(f"\nFinal context being sent to AI: {context[:200]}...")  # Print first 200 chars of context
+            # Query Supabase for relevant document chunks using vector similarity
+            query_response = supabase.rpc(
+                "match_documents",
+                {
+                    "query_embedding": question_embedding,
+                    "match_document_id": doc_id,
+                    "match_threshold": 0.3,  # Lower threshold significantly to get more matches
+                    "match_count": 5  # Increase number of chunks to retrieve
+                }
+            ).execute()
             
-            # Generate response using Mistral AI
-            ai_response = query_mistral_with_prefix(question, context)
+            print(f"Query response: {query_response.data}")
+            
+            # Debug: Check if we have any chunks for this doc_id
+            chunks_check = supabase.table("document_chunks") \
+                .select("*") \
+                .eq("doc_id", doc_id) \
+                .limit(1) \
+                .execute()
+            print(f"Total chunks for doc_id {doc_id}: {len(chunks_check.data)}")
+            
+            relevant_docs = query_response.data
+            
+            # Generate AI response
+            if not relevant_docs:
+                print("No relevant documents found in the query response")
+                ai_response = "I couldn't find relevant information to answer your question in the provided documentation. Please make sure you have processed the correct documentation for this session."
+            else:
+                # Debug: Print the content of each relevant doc
+                print("\nRelevant document contents:")
+                for idx, doc in enumerate(relevant_docs):
+                    print(f"\nDoc {idx + 1}:")
+                    print(f"Raw doc: {doc}")  # Print the entire doc object
+                    print(f"Content: {doc.get('content', 'NO CONTENT')}")
+                    print(f"Similarity: {doc.get('similarity', 'NO SIMILARITY')}")
+                
+                # Construct context from relevant documents
+                context = "\n\n".join([doc.get("content", "") for doc in relevant_docs])
+                print(f"\nFinal context being sent to AI: {context[:200]}...")  # Print first 200 chars of context
+                
+                # Generate response using Mistral AI
+                ai_response = query_mistral_with_prefix(question, context)
         
         # Store AI response
         ai_message_id = str(uuid.uuid4())
@@ -506,12 +509,16 @@ def create_message(session_id):
 @token_required
 def crawl():
     try:
-        # Get URL from request
+        # Get URL and session_id from request
         data = request.json
         url = data.get('url')
+        session_id = data.get('session_id')  # Get the session_id from the request
         
         if not url:
             return jsonify({"error": "URL is required"}), 400
+            
+        if not session_id:
+            return jsonify({"error": "Session ID is required"}), 400
         
         # Debug log for the received URL
         print(f"Received URL for crawling: {url}")
@@ -586,6 +593,12 @@ def crawl():
                 "url": url,
                 "content": aggregated_raw_markdown
             }).execute()
+            
+            # Update the session's doc_id
+            supabase.table("chat_sessions") \
+                .update({"doc_id": doc_id}) \
+                .eq("id", session_id) \
+                .execute()
             
             # Process all chunks at once more efficiently
             try:

@@ -26,20 +26,24 @@ axiosRetry(axios, {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { url } = body;
+    const { url, session_id } = body;
     
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
     
+    if (!session_id) {
+      return NextResponse.json({ error: 'Session ID is required' }, { status: 400 });
+    }
+    
     // Log the URL being sent
     console.log('Sending URL to backend:', url);
     
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
     
-    // Axios request configuration with increased timeout (5 minutes)
+    // Axios request configuration with increased timeout (10 minutes)
     const axiosConfig: AxiosRequestConfig = {
-      timeout: 600000000, // 5 minutes
+      timeout: 600000, // 10 minutes
       httpAgent: new http.Agent({ keepAlive: true }),
       httpsAgent: new https.Agent({ keepAlive: true }),
       headers: {
@@ -49,7 +53,7 @@ export async function POST(request: NextRequest) {
     };
 
     try {
-      const response = await axios.post(`${backendUrl}/crawl`, { url }, {
+      const response = await axios.post(`${backendUrl}/crawl`, { url, session_id }, {
         ...axiosConfig,
         headers: {
           ...axiosConfig.headers,
