@@ -417,6 +417,24 @@ def create_message(session_id):
             "content": question
         }).execute()
         
+        # Get recent conversation history (last 5 messages)
+        recent_messages = supabase.table("chat_messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(5) \
+            .execute()
+            
+        # Create conversation context
+        conversation_context = ""
+        if recent_messages.data:
+            # Reverse the messages to get them in chronological order
+            messages = list(reversed(recent_messages.data))
+            conversation_context = "\n".join([
+                f"{'User' if msg['is_user'] else 'Assistant'}: {msg['content']}"
+                for msg in messages
+            ])
+        
         # Get doc_id from the session
         doc_id = session.data[0].get('doc_id')
         
@@ -434,20 +452,12 @@ def create_message(session_id):
                 {
                     "query_embedding": question_embedding,
                     "match_document_id": doc_id,
-                    "match_threshold": 0.3,  # Lower threshold significantly to get more matches
-                    "match_count": 5  # Increase number of chunks to retrieve
+                    "match_threshold": 0.3,
+                    "match_count": 5
                 }
             ).execute()
             
             print(f"Query response: {query_response.data}")
-            
-            # Debug: Check if we have any chunks for this doc_id
-            chunks_check = supabase.table("document_chunks") \
-                .select("*") \
-                .eq("doc_id", doc_id) \
-                .limit(1) \
-                .execute()
-            print(f"Total chunks for doc_id {doc_id}: {len(chunks_check.data)}")
             
             relevant_docs = query_response.data
             
@@ -456,20 +466,20 @@ def create_message(session_id):
                 print("No relevant documents found in the query response")
                 ai_response = "I couldn't find relevant information to answer your question in the provided documentation. Please make sure you have processed the correct documentation for this session."
             else:
-                # Debug: Print the content of each relevant doc
-                print("\nRelevant document contents:")
-                for idx, doc in enumerate(relevant_docs):
-                    print(f"\nDoc {idx + 1}:")
-                    print(f"Raw doc: {doc}")  # Print the entire doc object
-                    print(f"Content: {doc.get('content', 'NO CONTENT')}")
-                    print(f"Similarity: {doc.get('similarity', 'NO SIMILARITY')}")
-                
                 # Construct context from relevant documents
-                context = "\n\n".join([doc.get("content", "") for doc in relevant_docs])
-                print(f"\nFinal context being sent to AI: {context[:200]}...")  # Print first 200 chars of context
+                doc_context = "\n\n".join([doc.get("content", "") for doc in relevant_docs])
                 
-                # Generate response using Mistral AI
-                ai_response = query_mistral_with_prefix(question, context)
+                # Combine document context with conversation context
+                combined_context = f"""
+                Previous Conversation:
+                {conversation_context}
+
+                Relevant Documentation:
+                {doc_context}
+                """
+                
+                # Generate response using Mistral AI with the combined context
+                ai_response = query_mistral_with_prefix(question, combined_context)
         
         # Store AI response
         ai_message_id = str(uuid.uuid4())
@@ -778,12 +788,16 @@ def query_mistral_with_prefix(question: str, context: str) -> str:
     
     #Answer using the provided context:
     prompt = f"""
+    You are a helpful coding assistant. Use the following context to answer the user's question.
+    If the context includes previous conversation, use it to maintain continuity and provide more relevant answers.
+    If you're unsure about something, say so rather than making assumptions.
 
     Context:
     {context}
 
     Question: {question}
 
+    Please provide a clear and concise answer based on the context above.
     """
     
     # Log token count for the prompt
