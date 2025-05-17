@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import axios from 'axios';
 
-
-
 interface DocumentInputProps {
   onDocumentProcessed: (docId: string) => void;
   sessionId: string;
@@ -31,7 +29,7 @@ export default function DocumentInput({ onDocumentProcessed, sessionId }: Docume
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        timeout: 600000 // 10 minutes
+        timeout: 600000
       });
       
       setCrawlStatus('Documentation successfully processed!');
@@ -45,40 +43,49 @@ export default function DocumentInput({ onDocumentProcessed, sessionId }: Docume
   };
 
   return (
-    <div className="bg-gray-800 p-6 rounded-lg shadow-md mb-8">
-      <h2 className="text-xl font-semibold mb-4">Process Documentation</h2>
-      <form onSubmit={handleUrlSubmit}>
-        <div className="mb-4">
-          <label htmlFor="url" className="block text-sm font-medium text-zinc-300 mb-1">
-            Documentation URL
-          </label>
+    <div className="w-full max-w-2xl mx-auto">
+      <form onSubmit={handleUrlSubmit} className="space-y-2">
+        <label htmlFor="url" className="text-xs text-[#F5E8D8]/60 block">
+          Documentation URL
+        </label>
+        <div className="flex gap-2">
           <input
             type="url"
             id="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://example.com/docs"
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+            className="flex-1 px-3 py-1.5 bg-[#2A2A2A] border border-[#3A3A3A] rounded text-sm text-[#F5E8D8] placeholder-[#F5E8D8]/40 focus:outline-none focus:border-[#DAA520]"
             required
           />
+          <button
+            type="submit"
+            disabled={isCrawling}
+            className="p-2 bg-[#DAA520] text-[#1C1C1C] rounded hover:bg-[#DAA520]/90 disabled:bg-[#DAA520]/50 disabled:opacity-50 transition-colors flex items-center justify-center"
+            aria-label="Process documentation"
+          >
+            {isCrawling ? (
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            ) : (
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+            )}
+          </button>
         </div>
-        <button
-          type="submit"
-          disabled={isCrawling}
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-50"
-        >
-          {isCrawling ? 'Processing...' : 'Process Documentation'}
-        </button>
       </form>
       
       {crawlStatus && (
-        <div className="mt-4 p-3 bg-blue-900/50 text-blue-200 rounded">
+        <div className="mt-2 text-xs text-[#DAA520]">
           {crawlStatus}
         </div>
       )}
       
       {error && (
-        <div className="mt-4 p-3 bg-red-900/50 text-red-200 rounded">
+        <div className="mt-2 text-xs text-[#FF6F61]">
           {error}
         </div>
       )}

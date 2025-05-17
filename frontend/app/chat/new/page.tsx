@@ -25,7 +25,6 @@ export default function NewChatPage() {
           headers: {
             'Authorization': `Bearer ${token}`
           }
-          
         });
 
         console.log('Sessions response:', sessionsResponse.data);
@@ -74,10 +73,10 @@ export default function NewChatPage() {
   if (loading) {
     console.log('Rendering loading state');
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-[#1C1C1C] text-[#F5E8D8] flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4">Creating new chat session...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#DAA520] mx-auto"></div>
+          <p className="mt-4 text-[#F5E8D8]/80">Creating new chat session...</p>
         </div>
       </div>
     );
@@ -85,12 +84,12 @@ export default function NewChatPage() {
   
   console.log('Rendering default state');
   return (
-    <div className="flex h-screen bg-gray-900 text-white">
+    <div className="flex h-screen bg-[#1C1C1C] text-[#F5E8D8]">
       <Sidebar />
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-xl font-semibold mb-4">Welcome to the Chat</h1>
-          <p className="mt-4">You have existing sessions. Please select a session from the sidebar.</p>
+          <p className="mt-4 text-[#F5E8D8]/80">You have existing sessions. Please select a session from the sidebar.</p>
         </div>
       </div>
     </div>

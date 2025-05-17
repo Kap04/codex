@@ -92,56 +92,56 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="h-full w-64 bg-gray-800 text-white p-4 flex flex-col">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold">Codex</h2>
+    <div className="h-full w-56 bg-[#1C1C1C] text-[#F5E8D8] p-3 flex flex-col border-r border-[#2A2A2A]">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-bold">Codex</h2>
       </div>
       
       <button
         onClick={createNewSession}
-        className="flex items-center justify-center gap-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md mb-6"
+        className="flex items-center justify-center gap-2 w-full bg-[#FF6F61] hover:bg-[#FF6F61]/90 text-[#F5E8D8] py-1.5 px-3 rounded-md mb-4 text-sm transition-colors"
       >
-        <PlusCircle size={16} />
+        <PlusCircle size={14} />
         <span>New Chat</span>
       </button>
       
-      <div className="flex flex-col gap-1 flex-grow overflow-y-auto">
-        <h3 className="text-sm text-gray-400 font-medium px-2 mb-2">Recent Chats</h3>
+      <div className="flex flex-col gap-0.5 flex-grow overflow-y-auto">
+        <h3 className="text-xs text-[#F5E8D8]/60 font-medium px-2 mb-1">Recent Chats</h3>
         
         {loading ? (
-          <div className="text-center py-4 text-gray-400">Loading...</div>
+          <div className="text-center py-2 text-[#F5E8D8]/60 text-sm">Loading...</div>
         ) : error ? (
-          <div className="text-center py-4 text-red-400">{error}</div>
+          <div className="text-center py-2 text-red-400 text-sm">{error}</div>
         ) : sessions.length === 0 ? (
-          <div className="text-center py-4 text-gray-400">No chats yet</div>
+          <div className="text-center py-2 text-[#F5E8D8]/60 text-sm">No chats yet</div>
         ) : (
           sessions.map((session) => (
             <Link 
               href={`/chat/${session.id}`} 
               key={session.id}
-              className={`flex items-center justify-between px-3 py-2 rounded-md hover:bg-gray-700 ${
-                pathname === `/chat/${session.id}` ? 'bg-gray-700' : ''
+              className={`flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-[#2A2A2A] text-sm transition-colors ${
+                pathname === `/chat/${session.id}` ? 'bg-[#2A2A2A]' : ''
               }`}
             >
               <div className="flex items-center gap-2 truncate">
-                <MessageSquare size={16} className="text-gray-400" />
+                <MessageSquare size={14} className="text-[#F5E8D8]/60" />
                 <span className="truncate">{session.title}</span>
               </div>
               <button
                 onClick={(e) => deleteSession(session.id, e)}
-                className="text-gray-400 hover:text-red-400 p-1"
+                className="text-[#F5E8D8]/60 hover:text-[#FF6F61] p-0.5 transition-colors"
               >
-                <Trash2 size={14} />
+                <Trash2 size={12} />
               </button>
             </Link>
           ))
         )}
       </div>
       
-      <div className="mt-4 pt-4 border-t border-gray-700">
+      <div className="mt-3 pt-3 border-t border-[#2A2A2A]">
         <Link 
           href="/" 
-          className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-gray-700"
+          className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[#2A2A2A] text-sm transition-colors"
         >
           Home
         </Link>

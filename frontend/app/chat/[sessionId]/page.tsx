@@ -106,20 +106,30 @@ export default function ChatPage({ params }: ChatPageProps) {
   };
 
   return (
-    <div className="flex h-screen bg-gray-900 text-white">
+    <div className="flex h-full bg-[#1C1C1C] text-[#F5E8D8]">
       <Sidebar />
       <div className="flex-1 flex flex-col">
+        <div className="p-4 border-b border-[#2A2A2A]">
+          <div className="max-w-3xl mx-auto">
+            <DocumentInput onDocumentProcessed={setDocId as any} sessionId={sessionId} />
+            {error && <div className="mt-2 p-3 bg-red-900/20 border border-red-700/30 rounded text-red-200">{error}</div>}
+          </div>
+        </div>
         <div className="flex-1 overflow-y-auto p-4">
           <div className="max-w-3xl mx-auto">
             {messages.length===0 && !docId ? (
-              <div className="text-center py-8 text-gray-400">
+              <div className="text-center py-8 text-[#F5E8D8]/60">
                 <h2 className="text-2xl font-bold mb-4">Start a conversation</h2>
                 <p>Process a documentation URL to begin.</p>
               </div>
             ) : (
               messages.map(msg => (
                 <div key={msg.id} className={`mb-6 ${msg.is_user?'text-right':'text-left'}`}>
-                  <div className={`inline-block max-w-[80%] p-4 rounded-lg ${msg.is_user?'bg-blue-700 text-white rounded-br-none':'bg-gray-800 text-white rounded-bl-none'}`}>
+                  <div className={`inline-block max-w-[80%] p-4 rounded-lg ${
+                    msg.is_user 
+                      ? 'bg-[#FF6F61] text-[#F5E8D8] rounded-br-none' 
+                      : 'bg-[#2A2A2A] text-[#F5E8D8] rounded-bl-none'
+                  }`}>
                     {msg.is_user ? <div>{msg.content}</div> : (
                       <div className="prose prose-invert">
                         <ReactMarkdown
@@ -135,7 +145,7 @@ export default function ChatPage({ params }: ChatPageProps) {
                               const text = String(children).replace(/\n$/, '');
                               const wordCount = text.trim().split(/\s+/).length;
                               if (inline || wordCount < 3) {
-                                return <code className="bg-gray-700 px-1 rounded" {...props}>{children}</code>;
+                                return <code className="bg-[#1C1C1C] px-1 rounded" {...props}>{children}</code>;
                               }
                               return <CodeBlock {...props}>{children}</CodeBlock>;
                             }
@@ -150,7 +160,7 @@ export default function ChatPage({ params }: ChatPageProps) {
             )}
             {isLoading && (
               <div className="mb-6 text-left">
-                <div className="inline-block max-w-[80%] p-4 rounded-lg bg-gray-800 text-white rounded-bl-none animate-pulse">
+                <div className="inline-block max-w-[80%] p-4 rounded-lg bg-[#2A2A2A] text-[#F5E8D8] rounded-bl-none animate-pulse">
                   AI is thinking...
                 </div>
               </div>
@@ -158,15 +168,23 @@ export default function ChatPage({ params }: ChatPageProps) {
             <div ref={messagesEndRef} />
           </div>
         </div>
-        <div className="p-4 border-t border-gray-800">
-          <div className="max-w-3xl mx-auto flex flex-col gap-4">
-            <DocumentInput onDocumentProcessed={setDocId as any} sessionId={sessionId} />
-            {error && <div className="p-3 bg-red-900/50 border border-red-700 rounded text-red-200">{error}</div>}
+        <div className="p-4 border-t border-[#2A2A2A]">
+          <div className="max-w-3xl mx-auto">
             <form onSubmit={handleSubmit} className="flex gap-2">
-              <input value={input} onChange={e=>setInput(e.target.value)} disabled={!docId||isLoading}
-                placeholder="Ask a question..." className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-blue-600"/>
-              <button type="submit" disabled={!input.trim()||!docId||isLoading}
-                className="bg-blue-600 px-4 py-2 rounded disabled:opacity-50">Send</button>
+              <input 
+                value={input} 
+                onChange={e=>setInput(e.target.value)} 
+                disabled={!docId||isLoading}
+                placeholder="Ask a question..." 
+                className="flex-1 px-4 py-2 bg-[#2A2A2A] border border-[#3A3A3A] rounded text-[#F5E8D8] placeholder-[#F5E8D8]/40 focus:outline-none focus:ring-2 focus:ring-[#DAA520]"
+              />
+              <button 
+                type="submit" 
+                disabled={!input.trim()||!docId||isLoading}
+                className="bg-[#DAA520] hover:bg-[#DAA520]/90 text-[#1C1C1C] px-4 py-2 rounded disabled:opacity-50 transition-colors"
+              >
+                Send
+              </button>
             </form>
           </div>
         </div>

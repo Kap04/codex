@@ -22,8 +22,10 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <AuthProvider>
-          <Navigation />
-          <main>{children}</main>
+          <div className="flex flex-col h-screen">
+            <Navigation />
+            <main className="flex-1 overflow-hidden">{children}</main>
+          </div>
         </AuthProvider>
       </body>
     </html>

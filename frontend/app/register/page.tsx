@@ -35,10 +35,10 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-[#1C1C1C] py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-[#F5E8D8]">
             Create your account
           </h2>
         </div>
@@ -54,7 +54,7 @@ export default function RegisterPage() {
                 type="email"
                 autoComplete="email"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-[#3A3A3A] placeholder-[#F5E8D8]/40 text-[#F5E8D8] bg-[#2A2A2A] rounded-t-md focus:outline-none focus:ring-[#DAA520] focus:border-[#DAA520] focus:z-10 sm:text-sm"
                 placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -70,7 +70,7 @@ export default function RegisterPage() {
                 type="password"
                 autoComplete="new-password"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-[#3A3A3A] placeholder-[#F5E8D8]/40 text-[#F5E8D8] bg-[#2A2A2A] focus:outline-none focus:ring-[#DAA520] focus:border-[#DAA520] focus:z-10 sm:text-sm"
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -86,7 +86,7 @@ export default function RegisterPage() {
                 type="password"
                 autoComplete="new-password"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-[#3A3A3A] placeholder-[#F5E8D8]/40 text-[#F5E8D8] bg-[#2A2A2A] rounded-b-md focus:outline-none focus:ring-[#DAA520] focus:border-[#DAA520] focus:z-10 sm:text-sm"
                 placeholder="Confirm Password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -95,7 +95,7 @@ export default function RegisterPage() {
           </div>
 
           {localError && (
-            <div className="text-red-500 text-sm text-center p-2 bg-red-50 rounded">
+            <div className="text-[#FF6F61] text-sm text-center p-2 bg-red-900/20 border border-red-700/30 rounded">
               <p className="font-medium">Error:</p>
               <p>{localError}</p>
             </div>
@@ -104,7 +104,7 @@ export default function RegisterPage() {
           <div>
             <button
               type="submit"
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-[#1C1C1C] bg-[#FF6F61] hover:bg-[#FF6F61]/90 focus:outline-none focus:ring-2 focus:ring-[#FF6F61]/50 transition-colors"
             >
               Sign up
             </button>
@@ -112,7 +112,7 @@ export default function RegisterPage() {
         </form>
 
         <div className="text-sm text-center">
-          <Link href="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+          <Link href="/login" className="font-medium text-[#DAA520] hover:text-[#DAA520]/90 transition-colors">
             Already have an account? Sign in
           </Link>
         </div>
