@@ -59,11 +59,15 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  const [docId, setDocId] = useState<string | null>(null);
+  const [hasDocuments, setHasDocuments] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  useEffect(() => { fetchMessages(); }, [sessionId]);
+  // useEffect(() => { 
+  //   fetchMessages();
+  //   checkIfSessionHasDocuments();
+  // }, [sessionId]);
+
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   const fetchMessages = async () => {
@@ -75,19 +79,47 @@ export default function ChatPage({ params }: ChatPageProps) {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setMessages(response.data.messages || []);
+      if (response.data.messages && response.data.messages.length > 0) {
+        setHasDocuments(true);
+      }
     } catch (err: any) {
       console.error(err);
       setError(err.response?.data?.error || 'Failed to fetch messages');
     }
   };
 
+  // const checkIfSessionHasDocuments = async () => {
+  //   try {
+  //     const token = localStorage.getItem('token');
+  //     if (!token) return;
+      
+  //     const sessionResponse = await axios.get(
+  //       `/api/sessions/${sessionId}`,
+  //       { headers: { Authorization: `Bearer ${token}` } }
+  //     );
+      
+  //     if (sessionResponse.data && sessionResponse.data.doc_id) {
+  //       setHasDocuments(true);
+  //     } else if (sessionResponse.data && sessionResponse.data.linked_documents && sessionResponse.data.linked_documents.length > 0) {
+  //       setHasDocuments(true);
+  //     } else {
+  //       setHasDocuments(false);
+  //     }
+      
+  //   } catch (err) {
+  //     console.error("Failed to check if session has documents:", err);
+  //     setHasDocuments(false);
+  //   }
+  // };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
-    if (!docId) return setError('Process a document first.');
+    if (!input.trim()) return;
 
     const userMessage = input.trim();
-    setInput(''); setIsLoading(true); setError('');
+    setInput('');
+    setIsLoading(true);
+    setError('');
 
     try {
       const token = localStorage.getItem('token');
@@ -111,13 +143,17 @@ export default function ChatPage({ params }: ChatPageProps) {
       <div className="flex-1 flex flex-col">
         <div className="p-4 border-b border-[#2A2A2A]">
           <div className="max-w-3xl mx-auto">
-            <DocumentInput onDocumentProcessed={setDocId as any} sessionId={sessionId} />
+            <DocumentInput 
+                sessionId={sessionId} 
+                onDocumentProcessed={undefined}
+                //onProcessingComplete={checkIfSessionHasDocuments}
+            />
             {error && <div className="mt-2 p-3 bg-red-900/20 border border-red-700/30 rounded text-red-200">{error}</div>}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           <div className="max-w-3xl mx-auto">
-            {messages.length===0 && !docId ? (
+            {messages.length===0 && !hasDocuments ? (
               <div className="text-center py-8 text-[#F5E8D8]/60">
                 <h2 className="text-2xl font-bold mb-4">Start a conversation</h2>
                 <p>Process a documentation URL to begin.</p>
@@ -174,13 +210,12 @@ export default function ChatPage({ params }: ChatPageProps) {
               <input 
                 value={input} 
                 onChange={e=>setInput(e.target.value)} 
-                disabled={!docId||isLoading}
                 placeholder="Ask a question..." 
                 className="flex-1 px-4 py-2 bg-[#2A2A2A] border border-[#3A3A3A] rounded text-[#F5E8D8] placeholder-[#F5E8D8]/40 focus:outline-none focus:ring-2 focus:ring-[#DAA520]"
               />
               <button 
                 type="submit" 
-                disabled={!input.trim()||!docId||isLoading}
+                disabled={!input.trim()}
                 className="bg-[#DAA520] hover:bg-[#DAA520]/90 text-[#1C1C1C] px-4 py-2 rounded disabled:opacity-50 transition-colors"
               >
                 Send

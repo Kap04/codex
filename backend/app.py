@@ -77,6 +77,16 @@ def setup_database():
             print("Please run the SQL script in the Supabase SQL editor to create the table")
             print("You can find the script at: backend/create_users_table.sql")
             
+        # Check if session_documents table exists
+        try:
+            # Try to query the session_documents table
+            supabase.table("session_documents").select("id").limit(1).execute()
+            print("Session_documents table already exists")
+        except Exception as e:
+            print(f"Session_documents table doesn't exist or is not accessible: {str(e)}")
+            print("Please run the SQL script in the Supabase SQL editor to create the table")
+            print("You can find the script at: backend/create_session_documents_table.sql")
+            
         print("Database setup completed")
     except Exception as e:
         print(f"Error setting up database: {str(e)}")
@@ -303,6 +313,15 @@ def create_session():
         
         print(f"Session created successfully with session_id: {session_id}")
         
+        # Link the crawled document to the session in the new table
+        print(f"Linking doc_id {doc_id} to session_id {session_id}")
+        supabase.table("session_documents").insert({
+            "id": str(uuid.uuid4()),
+            "session_id": session_id,
+            "doc_id": doc_id
+        }).execute()
+        print("Document linked to session successfully.")
+        
         return jsonify({
             "message": "Session created successfully",
             "session_id": session_id
@@ -435,39 +454,58 @@ def create_message(session_id):
                 for msg in messages
             ])
         
-        # Get doc_id from the session
-        doc_id = session.data[0].get('doc_id')
+        # Get all doc_ids associated with this session
+        session_docs_response = supabase.table("session_documents") \
+            .select("doc_id") \
+            .eq("session_id", session_id) \
+            .execute()
         
-        if not doc_id:
-            print("No document ID associated with this session.")
-            ai_response = "Please process a documentation first by providing a URL. Once you've processed a document, you can ask questions about it."
+        doc_ids = [item['doc_id'] for item in session_docs_response.data] if session_docs_response.data else []
+
+        print(f"Found document IDs for session {session_id}: {doc_ids}")
+        
+        if not doc_ids:
+            print("No document IDs associated with this session.")
+            ai_response = "Please process a documentation first by providing a URL. Once you've processed a document, you'll be able to ask questions about it."
         else:
             # Create embedding for the question
             question_embedding = create_embeddings(question)
             print(f"Question embedding created with dimension: {len(question_embedding)}")
             
             # Query Supabase for relevant document chunks using vector similarity
+            print(f"Calling match_documents_multiple_docs RPC with doc_ids: {doc_ids}")
             query_response = supabase.rpc(
-                "match_documents",
+                "match_documents_multiple_docs",
                 {
                     "query_embedding": question_embedding,
-                    "match_document_id": doc_id,
-                    "match_threshold": 0.3,
+                    "match_document_ids": doc_ids,
+                    "match_threshold": 0.1,  # Lowered from 0.3 to 0.1 to get more matches
                     "match_count": 5
                 }
             ).execute()
             
-            print(f"Query response: {query_response.data}")
+            print(f"Query response data from RPC: {query_response.data}")
             
             relevant_docs = query_response.data
             
             # Generate AI response
             if not relevant_docs:
                 print("No relevant documents found in the query response")
+                # Let's check if we have any chunks at all for these documents
+                chunks_check = supabase.table("document_chunks") \
+                    .select("id", "doc_id", "chunk_content") \
+                    .in_("doc_id", doc_ids) \
+                    .limit(1) \
+                    .execute()
+                print(f"Chunks check result: {chunks_check.data}")
+                
                 ai_response = "I couldn't find relevant information to answer your question in the provided documentation. Please make sure you have processed the correct documentation for this session."
             else:
                 # Construct context from relevant documents
-                doc_context = "\n\n".join([doc.get("content", "") for doc in relevant_docs])
+                doc_context = "\n\n".join([doc.get("chunk_content", "") for doc in relevant_docs])
+                print(f"Constructed context from {len(relevant_docs)} relevant documents")
+                print(f"Context length: {len(doc_context)} characters")
+                print(f"First 200 characters of context: {doc_context[:200]}")
                 
                 # Combine document context with conversation context
                 combined_context = f"""
@@ -604,11 +642,14 @@ def crawl():
                 "content": aggregated_raw_markdown
             }).execute()
             
-            # Update the session's doc_id
-            supabase.table("chat_sessions") \
-                .update({"doc_id": doc_id}) \
-                .eq("id", session_id) \
-                .execute()
+            # Link the crawled document to the session in the new table
+            print(f"Linking doc_id {doc_id} to session_id {session_id}")
+            supabase.table("session_documents").insert({
+                "id": str(uuid.uuid4()),
+                "session_id": session_id,
+                "doc_id": doc_id
+            }).execute()
+            print("Document linked to session successfully.")
             
             # Process all chunks at once more efficiently
             try:
@@ -945,21 +986,21 @@ def simple_sentence_tokenize(text):
 
 # Update the SectionHeaderChunking class to use the new tokenizer
 class SectionHeaderChunking:
-    def __init__(self, header_pattern=r'<h[1-6]>.*?</h[1-6]>', max_tokens=2000):  # Reduced from 4000 to 2000
-        self.header_pattern = header_pattern
-        self.max_tokens = max_tokens  # Set a much lower token limit for safety
+    def __init__(self, max_tokens=2000):
+        self.max_tokens = max_tokens
 
-    def chunk_by_headers(self, html_content):
-        # Use BeautifulSoup to parse HTML and extract text
-        soup = BeautifulSoup(html_content, 'html.parser')
-        text = soup.get_text()
+    def process_document(self, content):
+        # First try to split by markdown headers
+        sections = re.split(r'(?m)^#{1,6}\s+.*$', content)
         
-        # Split text by section headers
-        sections = re.split(self.header_pattern, text)
-        return sections
-
-    def process_document(self, html_content):
-        sections = self.chunk_by_headers(html_content)
+        # If no sections found, try to split by double newlines
+        if len(sections) <= 1:
+            sections = re.split(r'\n\s*\n', content)
+        
+        # If still no sections, split by single newlines
+        if len(sections) <= 1:
+            sections = content.split('\n')
+        
         all_chunks = []
         
         for section in sections:
@@ -973,7 +1014,7 @@ class SectionHeaderChunking:
                 # If section is within token limit, add it as is
                 all_chunks.append(section)
             else:
-                # If section is too large, split it into smaller chunks
+                # If section is too large, split it into sentences
                 sentences = simple_sentence_tokenize(section)
                 current_chunk = []
                 current_chunk_tokens = 0
@@ -1043,6 +1084,7 @@ class SectionHeaderChunking:
                 else:
                     final_chunks.append(chunk)
         
+        print(f"Created {len(final_chunks)} chunks from document")
         return final_chunks
 
 
@@ -1092,6 +1134,42 @@ def refresh_token():
 
     except Exception as e:
         print(f"Error refreshing token: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/sessions/<session_id>/documents', methods=['GET'])
+@token_required
+def get_session_documents(session_id):
+    try:
+        # Get user_id from JWT token
+        token = request.headers['Authorization'].split(" ")[1]
+        data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = data['user_id']
+
+        # Verify if the session belongs to the user
+        session = supabase.table("chat_sessions") \
+            .select("id") \
+            .eq("id", session_id) \
+            .eq("user_id", user_id) \
+            .execute()
+
+        if not session.data:
+            return jsonify({"error": "Session not found or you don't have permission"}), 403
+
+        # Fetch all doc_ids for the specified session from the session_documents table
+        response = supabase.table("session_documents") \
+            .select("doc_id") \
+            .eq("session_id", session_id) \
+            .execute()
+
+        # Extract just the doc_id values
+        doc_ids = [item['doc_id'] for item in response.data] if response.data else []
+
+        return jsonify(doc_ids)
+
+    except Exception as e:
+        print(f"Error fetching session documents: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
