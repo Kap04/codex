@@ -397,6 +397,33 @@ def get_messages(session_id):
         print(f"Error fetching messages: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+def generate_chat_title(message: str) -> str:
+    """Generate a concise title for the chat session using AI."""
+    try:
+        prompt = f"""Generate a short, descriptive title (4-6 words) for a chat session based on this first message:
+        "{message}"
+        
+        The title should be concise, clear, and capture the main topic or intent of the conversation.
+        Return only the title, nothing else."""
+        
+        chat_response = mistral_client.chat.complete(
+            model=MISTRAL_MODEL,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=50
+        )
+        
+        title = chat_response.choices[0].message.content.strip()
+        # Remove any quotes if present
+        title = title.strip('"\'')
+        return title
+    except Exception as e:
+        print(f"Error generating chat title: {str(e)}")
+        # Fallback to a truncated version of the message
+        return message[:50] + "..." if len(message) > 50 else message
+
 @app.route('/sessions/<session_id>/messages', methods=['POST'])
 @token_required
 def create_message(session_id):
@@ -426,7 +453,15 @@ def create_message(session_id):
         if not question:
             print("Question is required but not provided.")
             return jsonify({"error": "Question is required"}), 400
-            
+
+        # Check if this is the first message in the session
+        messages_count = supabase.table("chat_messages") \
+            .select("id", count="exact") \
+            .eq("session_id", session_id) \
+            .execute()
+        
+        is_first_message = messages_count.count == 0
+        
         # Create user message
         message_id = str(uuid.uuid4())
         supabase.table("chat_messages").insert({
@@ -435,6 +470,15 @@ def create_message(session_id):
             "is_user": True,
             "content": question
         }).execute()
+
+        # If this is the first message, generate and update the session title
+        if is_first_message:
+            title = generate_chat_title(question)
+            supabase.table("chat_sessions") \
+                .update({"title": title}) \
+                .eq("id", session_id) \
+                .execute()
+            print(f"Updated session title to: {title}")
         
         # Get recent conversation history (last 5 messages)
         recent_messages = supabase.table("chat_messages") \

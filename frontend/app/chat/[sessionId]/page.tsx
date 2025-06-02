@@ -132,6 +132,9 @@ export default function ChatPage({ params }: ChatPageProps) {
       const user: Message = { id: Date.now().toString(), content: userMessage, is_user: true, created_at: new Date().toISOString() };
       const ai: Message = { id: (Date.now()+1).toString(), content: response.data.response, is_user: false, created_at: new Date().toISOString() };
       setMessages(prev => [...prev, user, ai]);
+
+      // Dispatch session update event to refresh the sidebar
+      window.dispatchEvent(new Event('sessionUpdate'));
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to send message');
     } finally { setIsLoading(false); }

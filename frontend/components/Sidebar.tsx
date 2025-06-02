@@ -21,30 +21,42 @@ export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-
-    const fetchSessions = async () => {
-      try {
-        const response = await axios.get('/api/sessions', {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-        setSessions(response.data.sessions);
-      } catch (err: any) {
-        setError(err.response?.data?.error || 'Failed to fetch sessions');
-      } finally {
-        setLoading(false);
+  const fetchSessions = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        router.push('/login');
+        return;
       }
-    };
 
+      const response = await axios.get('/api/sessions', {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      setSessions(response.data.sessions);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to fetch sessions');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchSessions();
   }, [router]);
+
+  // Add event listener for session updates
+  useEffect(() => {
+    const handleSessionUpdate = () => {
+      fetchSessions();
+    };
+
+    window.addEventListener('sessionUpdate', handleSessionUpdate);
+    return () => {
+      window.removeEventListener('sessionUpdate', handleSessionUpdate);
+    };
+  }, []);
 
   const createNewSession = async () => {
     try {
